@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Prompt Bank</title>
+    <!-- Fonts are self hosted via @fontsource, imported in src/main.tsx -->
+    <style>
+      :root {
+        /* Swiss / International Typographic Style palette */
+        --sw-paper: #faf9f6;
+        --sw-panel: #ffffff;
+        --sw-fill: #f1efe9;
+        --sw-ink: #15140f;
+        --sw-muted: #6e6b62;
+        --sw-faint: #9c988d;
+        --sw-rule: #e3e0d7;
+        --sw-rule-strong: #c9c5b8;
+        --sw-accent: #e5391c;
+        --sw-accent-strong: #b32910;
+        --sw-accent-ink: #ffffff;
+
+        --sw-sans: 'Hanken Grotesk', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+        --sw-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+      }
+
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+      }
+
+      body {
+        background-color: var(--sw-paper);
+        color: var(--sw-ink);
+        font-family: var(--sw-sans);
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+        text-rendering: optimizeLegibility;
+      }
+
+      #root {
+        min-height: 100vh;
+      }
+
+      ::selection {
+        background-color: var(--sw-accent);
+        color: var(--sw-accent-ink);
+      }
+
+      /* Thin Swiss scrollbars */
+      * {
+        scrollbar-width: thin;
+        scrollbar-color: var(--sw-rule-strong) transparent;
+      }
+      *::-webkit-scrollbar {
+        width: 10px;
+        height: 10px;
+      }
+      *::-webkit-scrollbar-thumb {
+        background-color: var(--sw-rule-strong);
+        border: 3px solid var(--sw-paper);
+      }
+      *::-webkit-scrollbar-track {
+        background: transparent;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
