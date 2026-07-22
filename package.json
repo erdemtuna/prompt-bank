@@ -1,0 +1,57 @@
+{
+  "name": "prompt-bank",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "A local, file based, copy only prompt library with a small React interface.",
+  "author": "Erdem Tuna",
+  "license": "MIT",
+  "homepage": "https://github.com/erdemtuna/prompt-bank#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/erdemtuna/prompt-bank.git"
+  },
+  "bugs": {
+    "url": "https://github.com/erdemtuna/prompt-bank/issues"
+  },
+  "keywords": [
+    "prompt",
+    "prompt-library",
+    "markdown",
+    "local-first",
+    "react",
+    "vite",
+    "typescript"
+  ],
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "test": "vitest run",
+    "validate": "tsx scripts/validate.ts",
+    "check": "npm run validate && npm test && npm run build",
+    "ci": "npm run validate && npm test && npm run build"
+  },
+  "dependencies": {
+    "@fluentui/react-components": "^9.73.8",
+    "@fluentui/react-icons": "^2.0.326",
+    "@fontsource/hanken-grotesk": "^5.3.0",
+    "@fontsource/jetbrains-mono": "^5.3.0",
+    "react": "^19.2.6",
+    "react-dom": "^19.2.6",
+    "yaml": "^2.9.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^25.7.0",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.1",
+    "tsx": "^4.21.0",
+    "typescript": "^6.0.3",
+    "vite": "^8.0.12",
+    "vitest": "^4.1.6"
+  },
+  "engines": {
+    "node": "^20.19.0 || >=22.12.0"
+  }
+}
