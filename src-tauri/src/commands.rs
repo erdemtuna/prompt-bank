@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use tauri::{AppHandle, Manager, Window};
+use tauri::{AppHandle, Manager, Runtime, Window};
 use tauri_plugin_dialog::DialogExt;
 
 use prompt_bank_core::{
@@ -58,7 +58,7 @@ pub async fn read_global_prompts() -> Result<GlobalPrompts, CommandError> {
 
 /// List the remembered workspaces from the registry.
 #[tauri::command]
-pub async fn list_workspaces(app: AppHandle) -> Result<Vec<WorkspaceSummary>, CommandError> {
+pub async fn list_workspaces<R: Runtime>(app: AppHandle<R>) -> Result<Vec<WorkspaceSummary>, CommandError> {
     tauri::async_runtime::spawn_blocking(move || {
         let state = app.state::<AppState>();
         let _guard = state.registry_lock.lock().unwrap();
@@ -74,7 +74,7 @@ pub async fn list_workspaces(app: AppHandle) -> Result<Vec<WorkspaceSummary>, Co
 /// `None` when the user cancels. The blocking dialog and traversal run off the
 /// main thread.
 #[tauri::command]
-pub async fn pick_workspace(app: AppHandle) -> Result<Option<OpenedWorkspace>, CommandError> {
+pub async fn pick_workspace<R: Runtime>(app: AppHandle<R>) -> Result<Option<OpenedWorkspace>, CommandError> {
     tauri::async_runtime::spawn_blocking(move || {
         let Some(picked) = app.dialog().file().blocking_pick_folder() else {
             return Ok(None);
@@ -113,7 +113,7 @@ pub async fn pick_workspace(app: AppHandle) -> Result<Option<OpenedWorkspace>, C
 /// and does not appear freshly opened. The registry lock is released before the
 /// traversal.
 #[tauri::command]
-pub async fn open_workspace(app: AppHandle, id: String) -> Result<OpenedWorkspace, CommandError> {
+pub async fn open_workspace<R: Runtime>(app: AppHandle<R>, id: String) -> Result<OpenedWorkspace, CommandError> {
     tauri::async_runtime::spawn_blocking(move || {
         let record = {
             let state = app.state::<AppState>();
@@ -158,7 +158,7 @@ pub async fn open_workspace(app: AppHandle, id: String) -> Result<OpenedWorkspac
 
 /// Forget a workspace by id and return the updated recents list.
 #[tauri::command]
-pub async fn remove_workspace(app: AppHandle, id: String) -> Result<Vec<WorkspaceSummary>, CommandError> {
+pub async fn remove_workspace<R: Runtime>(app: AppHandle<R>, id: String) -> Result<Vec<WorkspaceSummary>, CommandError> {
     tauri::async_runtime::spawn_blocking(move || {
         let state = app.state::<AppState>();
         let _guard = state.registry_lock.lock().unwrap();
@@ -176,6 +176,6 @@ pub async fn remove_workspace(app: AppHandle, id: String) -> Result<Vec<Workspac
 /// frontend. The frontend passes the desired title (for example the active tab's
 /// folder name).
 #[tauri::command]
-pub fn set_window_title(window: Window, title: String) {
+pub fn set_window_title<R: Runtime>(window: Window<R>, title: String) {
     let _ = window.set_title(&title);
 }

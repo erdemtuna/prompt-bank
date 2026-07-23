@@ -109,6 +109,14 @@ npm run desktop:build
 
 The bundle is unsigned, so on macOS and Windows the system may warn the first time you open a locally built app. Signed and notarized installers are a later step.
 
+On WSL, `linuxdeploy` walks `PATH` and fails on the mounted Windows directories, so build the AppImage with the Windows entries removed from `PATH`:
+
+```bash
+PATH=$(printf '%s' "$PATH" | tr ':' '\n' | grep -v '^/mnt/' | paste -sd: -) npm run desktop:build
+```
+
+The pure Rust core is tested in CI with `cargo test -p prompt-bank-core`. A native IPC smoke test that exercises the real commands through Tauri's mock runtime runs locally with `cd src-tauri && cargo test`, since it needs the webview libraries to compile.
+
 ## Accessibility
 
 The interface is keyboard reachable, labels its controls, wires validation messages to their fields, and meets common contrast expectations. The local `npm run e2e` checks include an automated accessibility pass over both the built in library and the desktop workspace views.
