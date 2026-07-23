@@ -23,6 +23,8 @@ pub enum PromptFsError {
     TooManyFiles { limit: usize },
     TooManyEntries { limit: usize },
     PathTooLong { path: String, limit: usize },
+    /// Directory nesting exceeded the depth limit.
+    TooDeep { limit: usize },
     /// The registry file declared a version this build does not understand. The
     /// registry is left untouched (fail closed).
     UnknownRegistryVersion(u32),
@@ -62,6 +64,9 @@ impl fmt::Display for PromptFsError {
             PromptFsError::PathTooLong { path, limit } => {
                 write!(f, "path exceeds the {limit} character limit: {path}")
             }
+            PromptFsError::TooDeep { limit } => {
+                write!(f, "directory nesting exceeds the {limit} level limit")
+            }
             PromptFsError::UnknownRegistryVersion(version) => {
                 write!(f, "unsupported registry version {version}")
             }
@@ -97,6 +102,7 @@ impl PromptFsError {
             PromptFsError::TooManyFiles { .. } => "too_many_files",
             PromptFsError::TooManyEntries { .. } => "too_many_entries",
             PromptFsError::PathTooLong { .. } => "path_too_long",
+            PromptFsError::TooDeep { .. } => "too_deep",
             PromptFsError::UnknownRegistryVersion(_) => "unknown_registry_version",
             PromptFsError::Json(_) => "json",
         }
@@ -118,6 +124,7 @@ impl PromptFsError {
             PromptFsError::TooManyFiles { .. } => "There are too many prompt files.",
             PromptFsError::TooManyEntries { .. } => "There are too many files in the folder.",
             PromptFsError::PathTooLong { .. } => "A prompt path is too long.",
+            PromptFsError::TooDeep { .. } => "The prompt folder is nested too deeply.",
             PromptFsError::UnknownRegistryVersion(_) => "The workspace list has an unsupported version.",
             PromptFsError::Json(_) => "The workspace list is not valid JSON.",
         }

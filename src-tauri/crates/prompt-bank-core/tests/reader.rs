@@ -159,3 +159,13 @@ fn rejects_a_symlinked_subdirectory_that_escapes() {
     let err = read_markdown_tree(dir.path(), &ReadLimits::default()).unwrap_err();
     assert!(matches!(err, PromptFsError::Symlink(_)), "{err:?}");
 }
+
+#[test]
+fn rejects_nesting_deeper_than_the_limit() {
+    let dir = tempdir().unwrap();
+    write(&dir.path().join("a/b/c/deep.md"), "x");
+    let limits = ReadLimits { max_depth: 2, ..ReadLimits::default() };
+
+    let err = read_markdown_tree(dir.path(), &limits).unwrap_err();
+    assert!(matches!(err, PromptFsError::TooDeep { .. }), "{err:?}");
+}

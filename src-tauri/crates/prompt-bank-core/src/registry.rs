@@ -1,10 +1,9 @@
-use std::collections::hash_map::DefaultHasher;
 use std::fs;
-use std::hash::{Hash, Hasher};
 use std::io::Write;
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 use crate::errors::PromptFsError;
 
@@ -38,12 +37,11 @@ impl Default for Registry {
     }
 }
 
-/// Derive a stable opaque id from a canonical path, so reopening the same folder
-/// maps to the same id.
-pub fn workspace_id(canonical_path: &str) -> String {
-    let mut hasher = DefaultHasher::new();
-    canonical_path.hash(&mut hasher);
-    format!("{:016x}", hasher.finish())
+/// Generate a fresh opaque id for a new workspace record. Ids are random and
+/// persisted, so they are stable once assigned and collision-free, without
+/// depending on any hash algorithm remaining stable across toolchains.
+fn new_id() -> String {
+    Uuid::new_v4().to_string()
 }
 
 /// Load the registry, returning an empty one when the file does not exist. A
@@ -70,10 +68,14 @@ pub fn load_registry(path: &Path) -> Result<Registry, PromptFsError> {
 /// Persist the registry atomically through a temp file in the same directory,
 /// rejecting a symlinked target.
 pub fn save_registry(path: &Path, registry: &Registry) -> Result<(), PromptFsError> {
-    if let Ok(meta) = fs::symlink_metadata(path) {
-        if meta.file_type().is_symlink() {
-            return Err(PromptFsError::Symlink(path.to_path_buf()));
+    match fs::symlink_metadata(path) {
+        Ok(meta) => {
+            if meta.file_type().is_symlink() {
+                return Err(PromptFsError::Symlink(path.to_path_buf()));
+            }
         }
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+        Err(err) => return Err(PromptFsError::Io(err)),
     }
 
     let dir = path
@@ -107,7 +109,7 @@ pub fn upsert_workspace(
         return existing.id.clone();
     }
 
-    let id = workspace_id(canonical_path);
+    let id = new_id();
     registry.workspaces.push(WorkspaceRecord {
         id: id.clone(),
         path: canonical_path.to_string(),

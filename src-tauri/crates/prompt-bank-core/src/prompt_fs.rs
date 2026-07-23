@@ -68,11 +68,15 @@ pub fn read_markdown_tree(dir: &Path, limits: &ReadLimits) -> Result<Vec<PromptF
 
     let walker = WalkDir::new(&root)
         .follow_links(false)
-        .max_depth(limits.max_depth)
+        .max_depth(limits.max_depth + 1)
         .sort_by_file_name();
 
     for entry in walker {
         let entry = entry.map_err(walkdir_to_err)?;
+
+        if entry.depth() > limits.max_depth {
+            return Err(PromptFsError::TooDeep { limit: limits.max_depth });
+        }
 
         entry_count += 1;
         if entry_count > limits.max_entries {

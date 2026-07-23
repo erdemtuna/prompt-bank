@@ -1,6 +1,6 @@
 use prompt_bank_core::{
-    find_by_id, load_registry, remove_workspace, save_registry, upsert_workspace, workspace_id,
-    PromptFsError, Registry, REGISTRY_VERSION,
+    find_by_id, load_registry, remove_workspace, save_registry, upsert_workspace, PromptFsError,
+    Registry, REGISTRY_VERSION,
 };
 use tempfile::tempdir;
 
@@ -27,15 +27,23 @@ fn save_then_load_roundtrips() {
 }
 
 #[test]
-fn upsert_deduplicates_by_path_and_is_stable() {
+fn upsert_deduplicates_by_path_and_keeps_a_stable_id() {
     let mut registry = Registry::default();
     let first = upsert_workspace(&mut registry, "/home/u/proj", "proj", None);
     let second = upsert_workspace(&mut registry, "/home/u/proj", "renamed", None);
 
     assert_eq!(first, second);
+    assert!(!first.is_empty());
     assert_eq!(registry.workspaces.len(), 1);
     assert_eq!(registry.workspaces[0].label, "renamed");
-    assert_eq!(first, workspace_id("/home/u/proj"));
+}
+
+#[test]
+fn distinct_paths_get_distinct_ids() {
+    let mut registry = Registry::default();
+    let a = upsert_workspace(&mut registry, "/a", "a", None);
+    let b = upsert_workspace(&mut registry, "/b", "b", None);
+    assert_ne!(a, b);
 }
 
 #[test]
@@ -82,5 +90,19 @@ fn symlinked_registry_is_rejected() {
     symlink(&real, &link).unwrap();
 
     let err = load_registry(&link).unwrap_err();
+    assert!(matches!(err, PromptFsError::Symlink(_)), "{err:?}");
+}
+
+#[cfg(unix)]
+#[test]
+fn save_rejects_a_symlinked_target() {
+    use std::os::unix::fs::symlink;
+    let dir = tempdir().unwrap();
+    let real = dir.path().join("real.json");
+    std::fs::write(&real, r#"{"version":1,"workspaces":[]}"#).unwrap();
+    let link = dir.path().join("workspaces.json");
+    symlink(&real, &link).unwrap();
+
+    let err = save_registry(&link, &Registry::default()).unwrap_err();
     assert!(matches!(err, PromptFsError::Symlink(_)), "{err:?}");
 }

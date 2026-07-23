@@ -15,6 +15,6 @@ pub use errors::PromptFsError;
 pub use home::{resolve_global_dir, resolve_global_dir_with};
 pub use prompt_fs::{read_markdown_tree, PromptFile, ReadLimits};
 pub use registry::{
-    find_by_id, load_registry, remove_workspace, save_registry, upsert_workspace, workspace_id,
-    Registry, WorkspaceRecord, REGISTRY_FILE, REGISTRY_VERSION,
+    find_by_id, load_registry, remove_workspace, save_registry, upsert_workspace, Registry,
+    WorkspaceRecord, REGISTRY_FILE, REGISTRY_VERSION,
 };
