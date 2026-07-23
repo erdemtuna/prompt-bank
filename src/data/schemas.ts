@@ -6,6 +6,8 @@ export type ValidationIssue = {
   path?: string;
   paths?: string[];
   promptPaths?: string[];
+  promptKey?: string;
+  promptKeys?: string[];
   message: string;
 };
 
@@ -24,7 +26,9 @@ export type PromptOption = {
   defaultEnabled: boolean;
 };
 
-export type Prompt = {
+export type PromptSource = 'builtin' | 'global' | 'folder';
+
+export type ParsedPrompt = {
   id: string;
   title: string;
   description?: string;
@@ -38,9 +42,17 @@ export type Prompt = {
   path: string;
 };
 
+export type Prompt = ParsedPrompt & {
+  source: PromptSource;
+  sourceLabel: string;
+  key: string;
+};
+
 export type PromptIdentity = {
   id: string;
   path: string;
+  source?: PromptSource;
+  key?: string;
 };
 
 export type ModelPreset = {
@@ -103,7 +115,7 @@ const optionObjectSchema = z.object({
   defaultEnabled: z.boolean().optional()
 }).passthrough();
 
-export function parsePromptFile(path: string, raw: string): { prompt?: Prompt; promptIdentity?: PromptIdentity; issues: ValidationIssue[] } {
+export function parsePromptFile(path: string, raw: string): { prompt?: ParsedPrompt; promptIdentity?: PromptIdentity; issues: ValidationIssue[] } {
   const issues: ValidationIssue[] = [];
   const match = raw.match(/^---\s*\r?\n([\s\S]*?)\r?\n---\s*\r?\n?([\s\S]*)$/);
 
@@ -212,40 +224,66 @@ export function parseModelPresets(path: string, raw: string): { presets: ModelPr
   return { presets: issues.length > 0 ? [] : presets, issues };
 }
 
+export function defaultModelIssues(prompts: ParsedPrompt[], presetIds: Set<string>): ValidationIssue[] {
+  const issues: ValidationIssue[] = [];
+  for (const prompt of prompts) {
+    if (prompt.defaultModelId && !presetIds.has(prompt.defaultModelId)) {
+      issues.push(promptIssue(prompt.path, `Default model preset "${prompt.defaultModelId}" does not exist.`, promptKeyExtra(prompt)));
+    }
+  }
+  return issues;
+}
+
 export function validatePromptCollection(
-  prompts: Prompt[],
+  prompts: ParsedPrompt[],
   presets: ModelPreset[],
   options: { promptFileCount?: number; promptIdentities?: PromptIdentity[] } = {}
 ): ValidationIssue[] {
   const issues: ValidationIssue[] = [];
-  const promptIds = new Map<string, string[]>();
   const presetIds = new Set(presets.map((preset) => preset.id));
   const promptFileCount = options.promptFileCount ?? prompts.length;
-  const promptIdentities = options.promptIdentities ?? prompts.map(({ id, path }) => ({ id, path }));
+  const promptIdentities = options.promptIdentities
+    ?? prompts.map((prompt) => ({ id: prompt.id, path: prompt.path, source: (prompt as Partial<Prompt>).source, key: (prompt as Partial<Prompt>).key }));
 
   if (promptFileCount === 0) {
     issues.push({ scope: 'global', message: 'No prompt Markdown files were found.' });
   }
 
-  for (const identity of promptIdentities) {
-    promptIds.set(identity.id, [...(promptIds.get(identity.id) ?? []), identity.path]);
+  issues.push(...defaultModelIssues(prompts, presetIds));
+  issues.push(...duplicatePromptIdIssues(promptIdentities));
+
+  return issues;
+}
+
+function duplicatePromptIdIssues(identities: PromptIdentity[]): ValidationIssue[] {
+  const issues: ValidationIssue[] = [];
+  const groups = new Map<string, PromptIdentity[]>();
+  for (const identity of identities) {
+    const groupKey = `${identity.source ?? 'builtin'}\u0000${identity.id}`;
+    groups.set(groupKey, [...(groups.get(groupKey) ?? []), identity]);
   }
 
-  for (const prompt of prompts) {
-    if (prompt.defaultModelId && !presetIds.has(prompt.defaultModelId)) {
-      issues.push(promptIssue(prompt.path, `Default model preset "${prompt.defaultModelId}" does not exist.`));
-    }
-  }
-
-  for (const [id, paths] of promptIds) {
-    if (paths.length > 1) {
-      for (const path of paths) {
-        issues.push(promptIssue(path, `Duplicate prompt id "${id}".`, { paths, promptPaths: paths }));
-      }
+  for (const group of groups.values()) {
+    if (group.length <= 1) continue;
+    const id = group[0].id;
+    const paths = group.map((identity) => identity.path);
+    const keys = group.map((identity) => identity.key ?? identity.path);
+    for (const identity of group) {
+      issues.push(promptIssue(identity.path, `Duplicate prompt id "${id}".`, {
+        paths,
+        promptPaths: paths,
+        promptKeys: keys,
+        ...(identity.key ? { promptKey: identity.key } : {})
+      }));
     }
   }
 
   return issues;
+}
+
+function promptKeyExtra(prompt: ParsedPrompt): Partial<ValidationIssue> {
+  const key = (prompt as Partial<Prompt>).key;
+  return key ? { promptKey: key } : {};
 }
 
 export function extractPlaceholders(template: string): string[] {

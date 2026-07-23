@@ -190,12 +190,14 @@ const useStyles = makeStyles({
 });
 
 const data = loadAppData();
+const sourceOrder = ['builtin', 'global', 'folder'] as const;
 
 export default function App() {
   const styles = useStyles();
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState('all');
-  const [selectedPromptKey, setSelectedPromptKey] = useState<string | undefined>(data.prompts[0]?.path);
+  const [sourceFilter, setSourceFilter] = useState('all');
+  const [selectedPromptKey, setSelectedPromptKey] = useState<string | undefined>(data.prompts[0]?.key);
   const headerRef = useRef<HTMLElement>(null);
   const [headerHeight, setHeaderHeight] = useState(0);
 
@@ -208,27 +210,36 @@ export default function App() {
   }, []);
 
   const categories = useMemo(() => [...new Set(data.prompts.map((prompt) => prompt.category))].sort(compareCategoriesForLibrary), []);
+  const availableSources = useMemo(() => sourceOrder.filter((source) => data.prompts.some((prompt) => prompt.source === source)), []);
+  const showSourceFilter = availableSources.some((source) => source !== 'builtin');
+  const sourceOptions = useMemo(() => [
+    { value: 'all', label: 'All' },
+    ...availableSources.map((source) => ({ value: source, label: data.prompts.find((prompt) => prompt.source === source)?.sourceLabel ?? source }))
+  ], [availableSources]);
   const filteredPrompts = useMemo(() => {
     const query = search.trim().toLocaleLowerCase();
     return data.prompts.filter((prompt) => {
       const categoryMatches = category === 'all' || prompt.category === category;
+      const sourceMatches = sourceFilter === 'all' || prompt.source === sourceFilter;
       const searchMatches = !query || [prompt.title, prompt.description, prompt.category, prompt.tags.join(' '), prompt.template].join(' ').toLocaleLowerCase().includes(query);
-      return categoryMatches && searchMatches;
+      return categoryMatches && sourceMatches && searchMatches;
     });
-  }, [category, search]);
-  const selectedPrompt = data.prompts.find((prompt) => prompt.path === selectedPromptKey) ?? data.prompts[0];
-  const selectedPromptIsVisible = Boolean(selectedPrompt && filteredPrompts.some((prompt) => prompt.path === selectedPrompt.path));
-  const filtersAreActive = Boolean(search.trim()) || category !== 'all';
+  }, [category, search, sourceFilter]);
+  const selectedPrompt = data.prompts.find((prompt) => prompt.key === selectedPromptKey) ?? data.prompts[0];
+  const selectedPromptIsVisible = Boolean(selectedPrompt && filteredPrompts.some((prompt) => prompt.key === selectedPrompt.key));
+  const filtersAreActive = Boolean(search.trim()) || category !== 'all' || sourceFilter !== 'all';
 
   function clearFilters() {
     setSearch('');
     setCategory('all');
+    setSourceFilter('all');
   }
 
   function showSelectedPrompt() {
     if (!selectedPrompt) return;
     setSearch('');
     setCategory(selectedPrompt.category);
+    setSourceFilter('all');
   }
 
   const promptCountLabel = String(data.prompts.length).padStart(2, '0');
@@ -253,10 +264,14 @@ export default function App() {
           selectedPromptKey={selectedPromptKey}
           search={search}
           category={category}
+          sourceFilter={sourceFilter}
+          sourceOptions={sourceOptions}
+          showSourceFilter={showSourceFilter}
           totalPromptCount={data.prompts.length}
           selectedPromptHidden={Boolean(selectedPrompt && !selectedPromptIsVisible && filtersAreActive)}
           onSearchChange={setSearch}
           onCategoryChange={setCategory}
+          onSourceChange={setSourceFilter}
           onSelectPrompt={setSelectedPromptKey}
           onClearFilters={clearFilters}
           onShowSelectedPrompt={showSelectedPrompt}

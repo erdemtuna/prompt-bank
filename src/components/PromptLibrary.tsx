@@ -186,10 +186,14 @@ type Props = {
   selectedPromptKey?: string;
   search: string;
   category: string;
+  sourceFilter: string;
+  sourceOptions: { value: string; label: string }[];
+  showSourceFilter: boolean;
   totalPromptCount: number;
   selectedPromptHidden: boolean;
   onSearchChange: (value: string) => void;
   onCategoryChange: (value: string) => void;
+  onSourceChange: (value: string) => void;
   onSelectPrompt: (promptKey: string) => void;
   onClearFilters: () => void;
   onShowSelectedPrompt: () => void;
@@ -201,16 +205,20 @@ export function PromptLibrary({
   selectedPromptKey,
   search,
   category,
+  sourceFilter,
+  sourceOptions,
+  showSourceFilter,
   totalPromptCount,
   selectedPromptHidden,
   onSearchChange,
   onCategoryChange,
+  onSourceChange,
   onSelectPrompt,
   onClearFilters,
   onShowSelectedPrompt
 }: Props) {
   const styles = useStyles();
-  const filtersAreActive = Boolean(search.trim()) || category !== 'all';
+  const filtersAreActive = Boolean(search.trim()) || category !== 'all' || sourceFilter !== 'all';
   const resultSummary = filtersAreActive
     ? `${String(prompts.length).padStart(2, '0')} / ${String(totalPromptCount).padStart(2, '0')} match`
     : `Index — ${String(totalPromptCount).padStart(2, '0')} prompts`;
@@ -228,7 +236,25 @@ export function PromptLibrary({
           value={search}
           onChange={(_, data) => onSearchChange(data.value)}
         />
-        <div className={styles.filters} role="group" aria-label="Filter by category">
+      {showSourceFilter ? (
+        <div className={styles.filters} role="group" aria-label="Filter by source">
+          {sourceOptions.map((option) => {
+            const isActive = sourceFilter === option.value;
+            return (
+              <button
+                key={option.value}
+                type="button"
+                className={isActive ? `${styles.filter} ${styles.filterActive}` : styles.filter}
+                aria-pressed={isActive}
+                onClick={() => onSourceChange(option.value)}
+              >
+                {option.label}
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
+      <div className={styles.filters} role="group" aria-label="Filter by category">
           {filterOptions.map((item) => {
             const isActive = category === item;
             return (
@@ -261,21 +287,21 @@ export function PromptLibrary({
             </div>
           </div>
         ) : prompts.map((prompt, index) => {
-          const isSelected = prompt.path === selectedPromptKey;
+          const isSelected = prompt.key === selectedPromptKey;
           const number = String(index + 1).padStart(2, '0');
-          const metaParts = [prompt.category];
+          const metaParts = showSourceFilter ? [prompt.sourceLabel, prompt.category] : [prompt.category];
           if (prompt.kind === 'command') metaParts.push('command');
           if (prompt.variables.length > 0) metaParts.push(formatCount(prompt.variables.length, 'input'));
 
           return (
             <button
               type="button"
-              key={prompt.path}
+              key={prompt.key}
               className={isSelected ? `${styles.row} ${styles.rowSelected}` : styles.row}
               aria-pressed={isSelected}
               aria-current={isSelected ? 'true' : undefined}
-              aria-label={`${prompt.title}${isSelected ? ', selected' : ''}`}
-              onClick={() => onSelectPrompt(prompt.path)}
+              aria-label={`${prompt.title}${showSourceFilter ? `, ${prompt.sourceLabel}` : ''}${isSelected ? ', selected' : ''}`}
+              onClick={() => onSelectPrompt(prompt.key)}
             >
               <span className={isSelected ? `${styles.num} ${styles.numSelected}` : styles.num}>{number}</span>
               <span className={styles.body}>

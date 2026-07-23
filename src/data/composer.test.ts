@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { composePrompt, initialOptionValues, initialVariableValues, promptUsesModelPlaceholder, promptUsesRubberDuckModelPlaceholder } from './composer';
-import { loadAppDataFromSources } from './loaders';
+import { builtinPresetsRaw, builtinPromptSources, loadAppData, loadAppDataFromSources, resolvePromptsForApp } from './loaders';
 import { parseModelPresets, parsePromptFile, validatePromptCollection, type Prompt, type PromptIdentity, type PromptOption } from './schemas';
 import { formatCount, shouldUseTextarea } from '../components/promptUi';
 
@@ -77,6 +77,16 @@ describe('composer', () => {
       'prompts/b.md: Duplicate prompt id "duplicate".',
       'Library validation failed.'
     ]);
+  });
+
+  it('falls back to path matching when qualified keys are empty', () => {
+    const prompt = makePrompt('Hello {{ name }} from {{place}}.', 'a', undefined, 'prompts/a.md');
+    const result = composePrompt(prompt, { name: 'Ada', place: 'London' }, {}, {
+      validationIssues: [{ scope: 'prompt', path: 'prompts/a.md', promptKey: '', promptKeys: [''], message: 'Duplicate prompt id "a".' }]
+    });
+
+    expect(result.canCopy).toBe(false);
+    expect(result.validationBlockers).toEqual(['prompts/a.md: Duplicate prompt id "a".']);
   });
 
   it('only blocks preset validation issues for prompts that use model placeholders', () => {
@@ -519,7 +529,7 @@ describe('model preset validation', () => {
 });
 
 describe('app data loading', () => {
-  it('detects duplicate prompt ids when one duplicate source has local validation issues', () => {
+  it('resolves a within-source duplicate quietly, keeping one prompt and no duplicate error', () => {
     const data = loadAppDataFromSources(
       {
         '../../prompts/valid.md': '---\nid: same\ntitle: Valid\ndescription: Valid prompt\ncategory: review\n---\nValid body.',
@@ -529,21 +539,9 @@ describe('app data loading', () => {
     );
 
     expect(data.prompts).toHaveLength(1);
+    expect(data.prompts[0].id).toBe('same');
     expect(data.issues.some((issue) => issue.path === '../../prompts/invalid.md' && issue.message.includes('Invalid placeholder syntax'))).toBe(true);
-    expect(data.issues).toContainEqual(
-      expect.objectContaining({
-        path: '../../prompts/valid.md',
-        promptPaths: ['../../prompts/valid.md', '../../prompts/invalid.md'],
-        message: 'Duplicate prompt id "same".'
-      })
-    );
-    expect(data.issues).toContainEqual(
-      expect.objectContaining({
-        path: '../../prompts/invalid.md',
-        promptPaths: ['../../prompts/valid.md', '../../prompts/invalid.md'],
-        message: 'Duplicate prompt id "same".'
-      })
-    );
+    expect(data.issues.some((issue) => issue.message.includes('Duplicate prompt id'))).toBe(false);
   });
 
   it('sorts loaded prompts by workflow category before title', () => {
@@ -561,6 +559,131 @@ describe('app data loading', () => {
   });
 });
 
+describe('layered prompt sources', () => {
+  const validRaw = (id: string, title: string, body = `Body for ${id}.`) =>
+    `---\nid: ${id}\ntitle: ${title}\ndescription: A ${title} prompt\ncategory: review\n---\n${body}`;
+
+  it('keys built in prompts by their exact path and external prompts by a qualified key', () => {
+    const data = loadAppDataFromSources(
+      [
+        { source: 'builtin', files: { '../../prompts/a.md': validRaw('a', 'A') } },
+        { source: 'global', files: { 'a.md': validRaw('a', 'A global') } },
+        { source: 'folder', instanceId: 'ws1', files: { 'a.md': validRaw('a', 'A folder') } }
+      ],
+      'presets: []'
+    );
+
+    const byKey = new Map(data.prompts.map((prompt) => [prompt.key, prompt]));
+    expect(byKey.get('../../prompts/a.md')?.source).toBe('builtin');
+    expect(byKey.get('../../prompts/a.md')?.sourceLabel).toBe('Built in');
+    expect(byKey.get('global:a.md')?.source).toBe('global');
+    expect(byKey.get('global:a.md')?.sourceLabel).toBe('Global');
+    expect(byKey.get('folder:ws1:a.md')?.source).toBe('folder');
+    expect(byKey.get('folder:ws1:a.md')?.sourceLabel).toBe('Folder');
+  });
+
+  it('keeps the same id across different sources, showing each with its label', () => {
+    const data = loadAppDataFromSources(
+      [
+        { source: 'builtin', files: { '../../prompts/review.md': validRaw('review-code', 'Built in review') } },
+        { source: 'global', files: { 'review.md': validRaw('review-code', 'Global review') } }
+      ],
+      'presets: []'
+    );
+
+    const matching = data.prompts.filter((prompt) => prompt.id === 'review-code');
+    expect(matching).toHaveLength(2);
+    expect(matching.map((prompt) => prompt.source).sort()).toEqual(['builtin', 'global']);
+  });
+
+  it('deduplicates two valid prompts with the same id within one source deterministically', () => {
+    const data = loadAppDataFromSources(
+      [
+        {
+          source: 'folder',
+          instanceId: 'ws1',
+          files: {
+            'b.md': validRaw('same', 'Second'),
+            'a.md': validRaw('same', 'First')
+          }
+        }
+      ],
+      'presets: []'
+    );
+
+    const matching = data.prompts.filter((prompt) => prompt.id === 'same');
+    expect(matching).toHaveLength(1);
+    expect(matching[0].key).toBe('folder:ws1:a.md');
+    expect(data.issues.some((issue) => issue.message.includes('Duplicate prompt id'))).toBe(false);
+  });
+
+  it('keeps the same id from two different folder workspaces as separate prompts', () => {
+    const data = loadAppDataFromSources(
+      [
+        { source: 'folder', instanceId: 'ws1', files: { 'review.md': validRaw('shared', 'From ws1') } },
+        { source: 'folder', instanceId: 'ws2', files: { 'review.md': validRaw('shared', 'From ws2') } }
+      ],
+      'presets: []'
+    );
+
+    const matching = data.prompts.filter((prompt) => prompt.id === 'shared');
+    expect(matching).toHaveLength(2);
+    expect(matching.map((prompt) => prompt.key).sort()).toEqual(['folder:ws1:review.md', 'folder:ws2:review.md']);
+  });
+
+  it('produces identical results for a legacy map and an explicit built in source input', () => {
+    const files = {
+      '../../prompts/one.md': validRaw('one', 'One'),
+      '../../prompts/two.md': validRaw('two', 'Two')
+    };
+    const fromMap = loadAppDataFromSources(files, 'presets: []');
+    const fromInput = loadAppDataFromSources({ source: 'builtin', sourceLabel: 'Built in', files }, 'presets: []');
+
+    expect(fromInput.prompts).toEqual(fromMap.prompts);
+    expect(fromInput.issues).toEqual(fromMap.issues);
+  });
+
+  it('keeps a source-keyed issue from blocking a same-path prompt in another source', () => {
+    const data = loadAppDataFromSources(
+      [
+        { source: 'global', files: { 'review.md': validRaw('g', 'Global', 'Use {{model}} now.').replace('category: review', 'category: review\nmodel_default: nope') } },
+        { source: 'folder', instanceId: 'ws1', files: { 'review.md': validRaw('f', 'Folder', 'Use {{model}} now.') } }
+      ],
+      'presets: []'
+    );
+
+    const globalIssue = data.issues.find((issue) => issue.message.includes('Default model preset'));
+    expect(globalIssue?.promptKey).toBe('global:review.md');
+
+    const folderPrompt = data.prompts.find((prompt) => prompt.key === 'folder:ws1:review.md')!;
+    const folderResult = composePrompt(folderPrompt, {}, { model: 'GPT' }, { validationIssues: data.issues });
+    expect(folderResult.validationBlockers).toEqual([]);
+
+    const globalPrompt = data.prompts.find((prompt) => prompt.key === 'global:review.md')!;
+    const globalResult = composePrompt(globalPrompt, {}, { model: 'GPT' }, { validationIssues: data.issues });
+    expect(globalResult.validationBlockers.length).toBeGreaterThan(0);
+  });
+
+  it('exposes the built in prompt manifest through loadAppData', () => {
+    const ids = loadAppData().prompts.map((prompt) => prompt.id).sort();
+    expect(ids).toEqual([
+      'compare-approaches',
+      'explain-code',
+      'inspect-git-status',
+      'plan-a-task',
+      'refactor-code',
+      'review-code-changes',
+      'summarize-text'
+    ]);
+  });
+
+  it('labels every built in prompt with the built in source and a path-equal key', () => {
+    const data = resolvePromptsForApp([builtinPromptSources()], builtinPresetsRaw());
+    expect(data.prompts.every((prompt) => prompt.source === 'builtin' && prompt.sourceLabel === 'Built in')).toBe(true);
+    expect(data.prompts.every((prompt) => prompt.key === prompt.path)).toBe(true);
+  });
+});
+
 function makePrompt(template: string, id = 'prompt', defaultModelId?: string, path = 'prompt.md'): Prompt {
   return {
     id,
@@ -575,7 +698,10 @@ function makePrompt(template: string, id = 'prompt', defaultModelId?: string, pa
     options: [],
     defaultModelId,
     template,
-    path
+    path,
+    source: 'builtin',
+    sourceLabel: 'Built in',
+    key: path
   };
 }
 

@@ -1,13 +1,13 @@
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { parseModelPresets, parsePromptFile, validatePromptCollection, type Prompt, type PromptIdentity, type ValidationIssue } from '../src/data/schemas';
+import { parseModelPresets, parsePromptFile, validatePromptCollection, type ParsedPrompt, type PromptIdentity, type ValidationIssue } from '../src/data/schemas';
 
 const repoRoot = fileURLToPath(new URL('..', import.meta.url));
 const promptRoot = join(repoRoot, 'prompts');
 const modelPresetPath = join(repoRoot, 'model-presets.yaml');
 const issues: ValidationIssue[] = [];
-const prompts: Prompt[] = [];
+const prompts: ParsedPrompt[] = [];
 const promptIdentities: PromptIdentity[] = [];
 
 const presetResult = parseModelPresets(relative(repoRoot, modelPresetPath), readFileSync(modelPresetPath, 'utf8'));
