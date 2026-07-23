@@ -6,11 +6,13 @@
 //! these functions in narrow Tauri commands and owns all UI, window, and dialog
 //! types.
 
+pub mod dto;
 pub mod errors;
 pub mod home;
 pub mod prompt_fs;
 pub mod registry;
 
+pub use dto::{CommandError, GlobalPrompts, OpenedWorkspace, WorkspaceSummary};
 pub use errors::PromptFsError;
 pub use home::{resolve_global_dir, resolve_global_dir_with};
 pub use prompt_fs::{read_markdown_tree, PromptFile, ReadLimits};

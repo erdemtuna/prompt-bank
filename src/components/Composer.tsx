@@ -462,7 +462,7 @@ export function Composer({ prompt, presets, issues }: Props) {
     setModelId(promptUsesModelPlaceholder(prompt) ? defaultModelId : '');
     setRubberDuckModelId(promptUsesRubberDuckModelPlaceholder(prompt) ? defaultModelId : '');
     setFeedback(undefined);
-  }, [prompt?.path, presets, prompt]);
+  }, [prompt?.key, presets]);
 
   const selectedPreset = useMemo(() => presets.find((preset) => preset.id === modelId), [modelId, presets]);
   const selectedRubberDuckPreset = useMemo(() => presets.find((preset) => preset.id === rubberDuckModelId), [rubberDuckModelId, presets]);

@@ -1,8 +1,19 @@
-import { Button, FluentProvider, Text, makeStyles, webLightTheme, type Theme } from '@fluentui/react-components';
+import { FluentProvider, Text, makeStyles, webLightTheme, type Theme } from '@fluentui/react-components';
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
-import { Composer } from './components/Composer';
-import { PromptLibrary } from './components/PromptLibrary';
-import { compareCategoriesForLibrary, loadAppData } from './data/loaders';
+import { WorkspaceTabs } from './components/WorkspaceTabs';
+import { WorkspaceView } from './components/WorkspaceView';
+import { builtinPresetsRaw, builtinPromptSources, resolvePromptsForApp, type PromptSourceInput } from './data/loaders';
+import {
+  isDesktop,
+  listWorkspaces,
+  openWorkspace,
+  pickWorkspace,
+  readGlobalPrompts,
+  removeWorkspace,
+  setWindowTitle,
+  toCommandError,
+  type WorkspaceSummaryDto
+} from './data/desktopClient';
 
 const SANS = "'Hanken Grotesk', 'Helvetica Neue', Helvetica, Arial, sans-serif";
 const MONO = "'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace";
@@ -46,11 +57,7 @@ const useStyles = makeStyles({
       overflow: 'hidden'
     }
   },
-  accentBar: {
-    flexShrink: 0,
-    height: '3px',
-    backgroundColor: 'var(--sw-accent)'
-  },
+  accentBar: { flexShrink: 0, height: '3px', backgroundColor: 'var(--sw-accent)' },
   masthead: {
     position: 'sticky',
     top: 0,
@@ -69,17 +76,9 @@ const useStyles = makeStyles({
     alignItems: 'baseline',
     justifyContent: 'space-between',
     gap: '20px',
-    '@media (max-width: 900px)': {
-      padding: '11px 20px'
-    }
+    '@media (max-width: 900px)': { padding: '11px 20px' }
   },
-  brand: {
-    display: 'flex',
-    alignItems: 'baseline',
-    gap: '16px',
-    minWidth: 0,
-    flexWrap: 'wrap'
-  },
+  brand: { display: 'flex', alignItems: 'baseline', gap: '16px', minWidth: 0, flexWrap: 'wrap' },
   wordmark: {
     margin: 0,
     fontFamily: 'var(--sw-sans)',
@@ -105,13 +104,22 @@ const useStyles = makeStyles({
     letterSpacing: '0.12em',
     textTransform: 'uppercase',
     color: 'var(--sw-muted)',
-    '@media (max-width: 560px)': {
-      display: 'none'
-    }
+    '@media (max-width: 560px)': { display: 'none' }
   },
-  metaNum: {
-    fontWeight: 700,
-    color: 'var(--sw-ink)'
+  metaNum: { fontWeight: 700, color: 'var(--sw-ink)' },
+  notice: {
+    boxSizing: 'border-box',
+    width: '100%',
+    maxWidth: '1360px',
+    margin: '0 auto',
+    padding: '10px 40px',
+    display: 'flex',
+    gap: '12px',
+    alignItems: 'baseline',
+    fontFamily: 'var(--sw-mono)',
+    fontSize: '12px',
+    color: 'var(--sw-accent-strong)',
+    '@media (max-width: 900px)': { padding: '10px 20px' }
   },
   main: {
     boxSizing: 'border-box',
@@ -129,75 +137,42 @@ const useStyles = makeStyles({
       padding: '0 40px 28px',
       overflow: 'hidden'
     },
-    '@media (max-width: 900px)': {
-      gridTemplateColumns: '1fr',
-      padding: '0 20px 40px'
-    }
-  },
-  content: {
-    display: 'grid',
-    gap: '20px',
-    alignContent: 'start',
-    minWidth: 0,
-    boxSizing: 'border-box',
-    paddingTop: '24px',
-    paddingLeft: '48px',
-    borderLeft: '1px solid var(--sw-rule)',
-    '@media (min-width: 1101px)': {
-      minHeight: 0,
-      height: '100%',
-      overflow: 'hidden',
-      display: 'flex',
-      flexDirection: 'column',
-      gap: '16px'
-    },
-    '@media (max-width: 900px)': {
-      paddingLeft: 0,
-      paddingTop: '24px',
-      borderLeft: 'none',
-      borderTop: '1px solid var(--sw-rule)'
-    }
-  },
-  errors: {
-    display: 'grid',
-    gap: '12px',
-    marginBottom: '8px'
-  },
-  noticeCard: {
-    display: 'grid',
-    gap: '10px',
-    padding: '16px 18px',
-    backgroundColor: 'var(--sw-fill)',
-    borderLeft: '3px solid var(--sw-accent)'
-  },
-  noticeEyebrow: {
-    fontFamily: 'var(--sw-mono)',
-    fontSize: '11px',
-    letterSpacing: '0.14em',
-    textTransform: 'uppercase',
-    color: 'var(--sw-accent-strong)'
-  },
-  noticeActions: {
-    display: 'flex',
-    gap: '10px',
-    flexWrap: 'wrap'
-  },
-  emptyCard: {
-    padding: '20px',
-    border: '1px solid var(--sw-rule)',
-    color: 'var(--sw-muted)'
+    '@media (max-width: 900px)': { gridTemplateColumns: '1fr', padding: '0 20px 40px' }
   }
 });
 
-const data = loadAppData();
-const sourceOrder = ['builtin', 'global', 'folder'] as const;
+type LoadState = 'loading' | 'ready' | 'error';
+
+type Tab = {
+  id: string;
+  kind: 'library' | 'folder';
+  label: string;
+  folderSource?: PromptSourceInput;
+  state: LoadState;
+  error?: string;
+  selectedKey?: string;
+  loadSeq?: number;
+};
+
+const builtinSource = builtinPromptSources();
+const presetsRaw = builtinPresetsRaw();
+const LIBRARY_TAB: Tab = { id: 'library', kind: 'library', label: 'Library', state: 'ready' };
 
 export default function App() {
   const styles = useStyles();
+  const desktop = isDesktop();
+
+  const [globalSource, setGlobalSource] = useState<PromptSourceInput | null>(null);
+  const [tabs, setTabs] = useState<Tab[]>([LIBRARY_TAB]);
+  const [activeTabId, setActiveTabId] = useState<string>('library');
+  const [recents, setRecents] = useState<WorkspaceSummaryDto[]>([]);
+  const [notice, setNotice] = useState<string | null>(null);
+
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState('all');
   const [sourceFilter, setSourceFilter] = useState('all');
-  const [selectedPromptKey, setSelectedPromptKey] = useState<string | undefined>(data.prompts[0]?.key);
+
+  const loadSeqRef = useRef(0);
   const headerRef = useRef<HTMLElement>(null);
   const [headerHeight, setHeaderHeight] = useState(0);
 
@@ -209,37 +184,115 @@ export default function App() {
     return () => observer.disconnect();
   }, []);
 
-  const categories = useMemo(() => [...new Set(data.prompts.map((prompt) => prompt.category))].sort(compareCategoriesForLibrary), []);
-  const availableSources = useMemo(() => sourceOrder.filter((source) => data.prompts.some((prompt) => prompt.source === source)), []);
-  const showSourceFilter = availableSources.some((source) => source !== 'builtin');
-  const sourceOptions = useMemo(() => [
-    { value: 'all', label: 'All' },
-    ...availableSources.map((source) => ({ value: source, label: data.prompts.find((prompt) => prompt.source === source)?.sourceLabel ?? source }))
-  ], [availableSources]);
-  const filteredPrompts = useMemo(() => {
-    const query = search.trim().toLocaleLowerCase();
-    return data.prompts.filter((prompt) => {
-      const categoryMatches = category === 'all' || prompt.category === category;
-      const sourceMatches = sourceFilter === 'all' || prompt.source === sourceFilter;
-      const searchMatches = !query || [prompt.title, prompt.description, prompt.category, prompt.tags.join(' '), prompt.template].join(' ').toLocaleLowerCase().includes(query);
-      return categoryMatches && sourceMatches && searchMatches;
-    });
-  }, [category, search, sourceFilter]);
-  const selectedPrompt = data.prompts.find((prompt) => prompt.key === selectedPromptKey) ?? data.prompts[0];
-  const selectedPromptIsVisible = Boolean(selectedPrompt && filteredPrompts.some((prompt) => prompt.key === selectedPrompt.key));
-  const filtersAreActive = Boolean(search.trim()) || category !== 'all' || sourceFilter !== 'all';
+  useEffect(() => {
+    if (!desktop) return;
+    let cancelled = false;
+    readGlobalPrompts()
+      .then((source) => {
+        if (!cancelled) setGlobalSource(source);
+      })
+      .catch((error) => {
+        if (!cancelled) setNotice(`Global prompts could not load: ${toCommandError(error).message}`);
+      });
+    listWorkspaces()
+      .then((list) => {
+        if (!cancelled) setRecents(list);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [desktop]);
 
-  function clearFilters() {
-    setSearch('');
-    setCategory('all');
-    setSourceFilter('all');
+  const activeTab = tabs.find((tab) => tab.id === activeTabId) ?? tabs[0];
+
+  useEffect(() => {
+    if (!desktop) return;
+    const title = activeTab.kind === 'library' ? 'Prompt Bank' : `Prompt Bank: ${activeTab.label}`;
+    setWindowTitle(title).catch(() => {});
+  }, [desktop, activeTab.id, activeTab.kind, activeTab.label]);
+
+  const data = useMemo(() => {
+    const sources = [builtinSource];
+    if (globalSource) sources.push(globalSource);
+    if (activeTab.folderSource) sources.push(activeTab.folderSource);
+    return resolvePromptsForApp(sources, presetsRaw);
+  }, [globalSource, activeTab.id, activeTab.folderSource]);
+
+  function setSelectedKey(key: string) {
+    setTabs((prev) => prev.map((tab) => (tab.id === activeTabId ? { ...tab, selectedKey: key } : tab)));
   }
 
-  function showSelectedPrompt() {
-    if (!selectedPrompt) return;
-    setSearch('');
-    setCategory(selectedPrompt.category);
-    setSourceFilter('all');
+  function refreshRecents() {
+    listWorkspaces()
+      .then(setRecents)
+      .catch(() => {});
+  }
+
+  function loadFolderInto(id: string) {
+    const seq = loadSeqRef.current + 1;
+    loadSeqRef.current = seq;
+    setTabs((prev) => prev.map((tab) => (tab.id === id ? { ...tab, state: 'loading', loadSeq: seq, error: undefined } : tab)));
+    openWorkspace(id)
+      .then((result) => {
+        setTabs((prev) =>
+          prev.map((tab) =>
+            tab.id === id && tab.loadSeq === seq
+              ? { ...tab, state: 'ready', label: result.label, folderSource: result.source }
+              : tab
+          )
+        );
+      })
+      .catch((error) => {
+        const message = toCommandError(error).message;
+        setTabs((prev) => prev.map((tab) => (tab.id === id && tab.loadSeq === seq ? { ...tab, state: 'error', error: message } : tab)));
+      });
+  }
+
+  function openRecent(id: string) {
+    if (tabs.some((tab) => tab.id === id)) {
+      setActiveTabId(id);
+      return;
+    }
+    const recent = recents.find((entry) => entry.id === id);
+    setTabs((prev) => [...prev, { id, kind: 'folder', label: recent?.label ?? 'workspace', state: 'loading' }]);
+    setActiveTabId(id);
+    loadFolderInto(id);
+  }
+
+  function openFolder() {
+    setNotice(null);
+    pickWorkspace()
+      .then((result) => {
+        if (!result) return;
+        setTabs((prev) => {
+          if (prev.some((tab) => tab.id === result.workspaceId)) {
+            return prev.map((tab) =>
+              tab.id === result.workspaceId ? { ...tab, state: 'ready', label: result.label, folderSource: result.source, error: undefined } : tab
+            );
+          }
+          return [...prev, { id: result.workspaceId, kind: 'folder', label: result.label, folderSource: result.source, state: 'ready' }];
+        });
+        setActiveTabId(result.workspaceId);
+        refreshRecents();
+      })
+      .catch((error) => setNotice(`That folder could not be opened: ${toCommandError(error).message}`));
+  }
+
+  function forgetRecent(id: string) {
+    removeWorkspace(id)
+      .then(setRecents)
+      .catch((error) => setNotice(`That folder could not be forgotten: ${toCommandError(error).message}`));
+  }
+
+  function closeTab(id: string) {
+    const index = tabs.findIndex((tab) => tab.id === id);
+    const next = tabs.filter((tab) => tab.id !== id);
+    setTabs(next);
+    if (activeTabId === id) {
+      const fallback = next[Math.max(0, index - 1)] ?? next[0];
+      setActiveTabId(fallback?.id ?? 'library');
+    }
   }
 
   const promptCountLabel = String(data.prompts.length).padStart(2, '0');
@@ -253,60 +306,57 @@ export default function App() {
             <h1 className={styles.wordmark}>Prompt&nbsp;Bank</h1>
             <span className={styles.tagline}>File-backed prompt library — copy only</span>
           </div>
-          <span className={styles.mastheadMeta}><span className={styles.metaNum}>{promptCountLabel}</span> Prompts</span>
+          <span className={styles.mastheadMeta}>
+            <span className={styles.metaNum}>{promptCountLabel}</span> Prompts
+          </span>
         </div>
+        {desktop ? (
+          <WorkspaceTabs
+            tabs={tabs.map((tab) => ({ id: tab.id, label: tab.label, closable: tab.kind === 'folder', busy: tab.state === 'loading' }))}
+            activeTabId={activeTabId}
+            recents={recents}
+            onSelectTab={setActiveTabId}
+            onCloseTab={closeTab}
+            onOpenFolder={openFolder}
+            onOpenRecent={openRecent}
+            onForgetRecent={forgetRecent}
+          />
+        ) : null}
+        {notice ? (
+          <div className={styles.notice} role="status">
+            <span>{notice}</span>
+          </div>
+        ) : null}
+        {activeTab.state === 'error' ? (
+          <div className={styles.notice} role="alert">
+            <span>This folder could not be read: {activeTab.error}</span>
+            <button type="button" onClick={() => loadFolderInto(activeTab.id)}>
+              Retry
+            </button>
+          </div>
+        ) : activeTab.state === 'loading' ? (
+          <div className={styles.notice} role="status">
+            <span>Loading {activeTab.label} prompts…</span>
+          </div>
+        ) : null}
       </header>
 
       <main className={styles.main} style={headerHeight ? ({ ['--pb-header-height']: `${headerHeight}px` } as CSSProperties) : undefined}>
-        <PromptLibrary
-          prompts={filteredPrompts}
-          categories={categories}
-          selectedPromptKey={selectedPromptKey}
-          search={search}
-          category={category}
-          sourceFilter={sourceFilter}
-          sourceOptions={sourceOptions}
-          showSourceFilter={showSourceFilter}
-          totalPromptCount={data.prompts.length}
-          selectedPromptHidden={Boolean(selectedPrompt && !selectedPromptIsVisible && filtersAreActive)}
-          onSearchChange={setSearch}
-          onCategoryChange={setCategory}
-          onSourceChange={setSourceFilter}
-          onSelectPrompt={setSelectedPromptKey}
-          onClearFilters={clearFilters}
-          onShowSelectedPrompt={showSelectedPrompt}
-        />
-
-        <section className={styles.content} aria-label="Prompt workspace">
-          {data.issues.length > 0 ? (
-            <div className={styles.errors}>
-              {data.issues.map((issue, index) => (
-                <div key={`${issue.path}-${issue.message}-${index}`} className={styles.noticeCard}>
-                  <Text className={styles.noticeEyebrow}>Validation issue</Text>
-                  <Text block>{issue.path ? `${issue.path}: ` : ''}{issue.message}</Text>
-                </div>
-              ))}
-            </div>
-          ) : null}
-
-          {data.prompts.length === 0 ? (
-            <div className={styles.emptyCard}><Text>No prompt Markdown files were found under prompts.</Text></div>
-          ) : (
-            <>
-              {selectedPrompt && !selectedPromptIsVisible && filtersAreActive ? (
-                <div className={styles.noticeCard}>
-                  <Text className={styles.noticeEyebrow}>Hidden by filters</Text>
-                  <Text>The workspace is preserving your selected prompt. Clear filters or show its category to make it visible in the index again.</Text>
-                  <div className={styles.noticeActions}>
-                    <Button appearance="primary" onClick={clearFilters}>Clear filters</Button>
-                    <Button onClick={showSelectedPrompt}>Show selected</Button>
-                  </div>
-                </div>
-              ) : null}
-              <Composer prompt={selectedPrompt} presets={data.presets} issues={data.issues} />
-            </>
-          )}
-        </section>
+        {data.prompts.length === 0 ? (
+          <Text>No prompt Markdown files were found.</Text>
+        ) : (
+          <WorkspaceView
+            data={data}
+            search={search}
+            category={category}
+            sourceFilter={sourceFilter}
+            selectedPromptKey={activeTab.selectedKey}
+            onSearchChange={setSearch}
+            onCategoryChange={setCategory}
+            onSourceChange={setSourceFilter}
+            onSelectPrompt={setSelectedKey}
+          />
+        )}
       </main>
     </FluentProvider>
   );
