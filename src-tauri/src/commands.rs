@@ -137,8 +137,17 @@ pub async fn open_workspace(app: AppHandle, id: String) -> Result<OpenedWorkspac
             let _guard = state.registry_lock.lock().unwrap();
             let file = registry_file()?;
             let mut registry = load_registry(&file)?;
-            upsert_workspace(&mut registry, &record.path, &record.label, Some(now_seconds()));
-            save_registry(&file, &registry)?;
+            // Update last opened in place, matching the original id. If the
+            // workspace was removed meanwhile, do not recreate it; report it gone.
+            match registry.workspaces.iter_mut().find(|workspace| workspace.id == record.id) {
+                Some(existing) => {
+                    existing.last_opened = Some(now_seconds());
+                    save_registry(&file, &registry)?;
+                }
+                None => {
+                    return Err(CommandError::new("not_found", "That workspace was removed."));
+                }
+            }
         }
 
         Ok(OpenedWorkspace { workspace_id: record.id, label: record.label, files })
