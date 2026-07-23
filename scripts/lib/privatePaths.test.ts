@@ -28,6 +28,11 @@ describe('isPrivateTrackedPath', () => {
     expect(isPrivateTrackedPath('src/.prompt-bankish/x.md')).toBe(false);
     expect(isPrivateTrackedPath('docs/my.prompt-bank.md')).toBe(false);
     expect(isPrivateTrackedPath('prompt-bank/x.md')).toBe(false);
+    expect(isPrivateTrackedPath('.prompt-bankrc')).toBe(false);
+  });
+
+  it('matches through a leading "./" prefix', () => {
+    expect(isPrivateTrackedPath('./nested/.prompt-bank/x.md')).toBe(true);
   });
 });
 
