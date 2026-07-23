@@ -126,6 +126,42 @@ describe('composer', () => {
     expect(result.canCopy).toBe(true);
   });
 
+  it('collapses blank lines and omits disabled blocks when the template uses CRLF line endings', () => {
+    const prompt = makePromptWithOptions(
+      'Start.\n{{#option frontendFocus}}\nFrontend {{name}}.\n{{/option}}\n{{#option backendFocus}}\nBackend {{place}}.\n{{/option}}\nEnd.'.replace(/\n/g, '\r\n')
+    );
+
+    const bothEnabled = composePrompt(prompt, { name: 'UI', place: 'API' }, {}, { optionValues: { frontendFocus: true, backendFocus: true } });
+    expect(bothEnabled.text).toBe('Start.\n\nFrontend UI.\n\nBackend API.\n\nEnd.');
+    expect(bothEnabled.text).not.toContain('\r');
+
+    const backendOnly = composePrompt(prompt, { name: 'UI', place: 'API' }, {}, { optionValues: { frontendFocus: false, backendFocus: true } });
+    expect(backendOnly.text).toBe('Start.\n\nBackend API.\n\nEnd.');
+  });
+
+  it('collapses whitespace-only blank lines and leftover gaps under CRLF when an option is disabled', () => {
+    // The separator line between the option blocks holds only a space and a tab, and the whole template uses CRLF.
+    const template = [
+      'Focus on:',
+      '',
+      '{{#option frontendFocus}}',
+      '- Frontend {{name}}.',
+      '{{/option}}',
+      ' \t ',
+      '{{#option backendFocus}}',
+      '- Backend {{place}}.',
+      '{{/option}}'
+    ].join('\r\n');
+    const prompt = makePromptWithOptions(template);
+
+    const backendOnly = composePrompt(prompt, { name: 'UI', place: 'API' }, {}, { optionValues: { frontendFocus: false, backendFocus: true } });
+    expect(backendOnly.text).toBe('Focus on:\n\n- Backend API.');
+    expect(backendOnly.text).not.toMatch(/\n[ \t]+\n/);
+
+    const bothEnabled = composePrompt(prompt, { name: 'UI', place: 'API' }, {}, { optionValues: { frontendFocus: true, backendFocus: true } });
+    expect(bothEnabled.text).toBe('Focus on:\n\n- Frontend UI.\n\n- Backend API.');
+  });
+
   it('does not require variables that are only used inside disabled option blocks', () => {
     const prompt = makePromptWithOptions(
       'Start.\n{{#option frontendFocus}}\nFrontend {{name}}.\n{{/option}}\n{{#option backendFocus}}\nBackend {{place}}.\n{{/option}}'
@@ -206,6 +242,15 @@ describe('prompt validation', () => {
     expect(result.issues).toContainEqual(
       expect.objectContaining({ scope: 'prompt', path: 'prompts/example.md', message: 'Unknown placeholder "missing" is not declared as a variable.' })
     );
+  });
+
+  it('normalizes CRLF line endings so the stored template is canonical LF', () => {
+    const raw = ['---', 'id: example', 'title: Example', 'description: Example prompt', 'category: planning', '---', 'Line one.', '', 'Line two.'].join('\r\n');
+    const result = parsePromptFile('prompts/example.md', raw);
+
+    expect(result.issues).toEqual([]);
+    expect(result.prompt?.template).toBe('Line one.\n\nLine two.');
+    expect(result.prompt?.template.includes('\r')).toBe(false);
   });
 
   it('detects duplicate variable names', () => {
