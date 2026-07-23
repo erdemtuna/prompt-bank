@@ -107,7 +107,13 @@ Then build an unsigned bundle for your platform:
 npm run desktop:build
 ```
 
-The bundle is unsigned, so on macOS and Windows the system may warn the first time you open a locally built app. Signed and notarized installers are a later step.
+This produces the native bundles for whichever operating system you build on:
+
+- Windows: `Prompt Bank_0.1.0_x64-setup.exe` (NSIS) and an `.msi`, under `src-tauri\target\release\bundle\`. WebView2 is preinstalled on Windows 11.
+- macOS: `Prompt Bank.app` and a `.dmg`, under `src-tauri/target/release/bundle/`.
+- Linux: an `.AppImage` and a `.deb`, under `src-tauri/target/release/bundle/`.
+
+Build on the target operating system itself; cross compiling between them is not supported here. The bundle is unsigned, so on macOS and Windows the system may warn the first time you open a locally built app. Signed and notarized installers are a later step.
 
 On WSL, `linuxdeploy` walks `PATH` and fails on the mounted Windows directories, so build the AppImage with the Windows entries removed from `PATH`:
 
