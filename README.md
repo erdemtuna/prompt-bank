@@ -109,7 +109,7 @@ npm run desktop:build
 
 This produces the native bundles for whichever operating system you build on:
 
-- Windows: `Prompt Bank_0.1.1_x64-setup.exe` (NSIS) and an `.msi`, under `src-tauri\target\release\bundle\`. WebView2 is preinstalled on Windows 11.
+- Windows: `Prompt Bank_0.1.2_x64-setup.exe` (NSIS) and an `.msi`, under `src-tauri\target\release\bundle\`. WebView2 is preinstalled on Windows 11.
 - macOS: `Prompt Bank.app` and a `.dmg`, under `src-tauri/target/release/bundle/`.
 - Linux: an `.AppImage` and a `.deb`, under `src-tauri/target/release/bundle/`.
 
@@ -127,7 +127,7 @@ The pure Rust core is tested in CI with `cargo test -p prompt-bank-core`. A nati
 
 Installers for all three desktop operating systems are built automatically by the `Release` GitHub Actions workflow, which runs `tauri-apps/tauri-action` on macOS, Windows, and Linux runners.
 
-- To cut a release, push a version tag: `git tag v0.1.1 && git push origin v0.1.1`. The workflow builds every installer and attaches them to a new **draft** GitHub release, which you review and publish. macOS is built for both Apple Silicon and Intel.
+- To cut a release, push a version tag: `git tag v0.1.2 && git push origin v0.1.2`. The workflow builds every installer and attaches them to a new **draft** GitHub release, which you review and publish. macOS is built for both Apple Silicon and Intel.
 - To produce installers without a release, run the workflow manually from the Actions tab (`workflow_dispatch`). The bundles are uploaded as downloadable workflow artifacts.
 
 The produced bundles are the Windows `.exe` (NSIS) and `.msi`, the macOS `.app` and `.dmg`, and the Linux `.AppImage` and `.deb`. They are unsigned for now, so macOS Gatekeeper and Windows SmartScreen may warn on first open; signing is a later step.

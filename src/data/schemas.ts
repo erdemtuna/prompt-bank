@@ -115,9 +115,14 @@ const optionObjectSchema = z.object({
   defaultEnabled: z.boolean().optional()
 }).passthrough();
 
+/** Normalize CRLF and lone CR line endings to LF so whitespace handling is platform independent. */
+function normalizeLineEndings(text: string): string {
+  return text.replace(/\r\n?/g, '\n');
+}
+
 export function parsePromptFile(path: string, raw: string): { prompt?: ParsedPrompt; promptIdentity?: PromptIdentity; issues: ValidationIssue[] } {
   const issues: ValidationIssue[] = [];
-  const match = raw.match(/^---\s*\r?\n([\s\S]*?)\r?\n---\s*\r?\n?([\s\S]*)$/);
+  const match = normalizeLineEndings(raw).match(/^---\s*\n([\s\S]*?)\n---\s*\n?([\s\S]*)$/);
 
   if (!match) {
     return { issues: [promptIssue(path, 'Missing YAML frontmatter.')] };
@@ -297,14 +302,15 @@ export function extractPlaceholders(template: string): string[] {
 }
 
 export function renderPromptTemplateOptions(template: string, optionValues: Record<string, boolean>, allOptionsDisabled: boolean): string {
-  return template
+  return normalizeLineEndings(template)
     .replace(/\{\{\s*#option\s+([A-Za-z_][A-Za-z0-9_]*)\s*\}\}([\s\S]*?)\{\{\s*\/option\s*\}\}/g, (_, optionId: string, content: string) =>
       optionValues[optionId] ? content : ''
     )
     .replace(/\{\{\s*#allOptionsDisabled\s*\}\}([\s\S]*?)\{\{\s*\/allOptionsDisabled\s*\}\}/g, (_, content: string) =>
       allOptionsDisabled ? content : ''
     )
-    .replace(/\n{3,}/g, '\n\n')
+    // Collapse a run of blank lines (including lines that hold only spaces or tabs) to a single blank line.
+    .replace(/\n(?:[ \t]*\n){2,}/g, '\n\n')
     .trim();
 }
 
