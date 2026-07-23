@@ -213,11 +213,18 @@ export default function App() {
   }, [desktop, activeTab.id, activeTab.kind, activeTab.label]);
 
   const data = useMemo(() => {
+    // A folder tab is scoped to its own prompts only. Built in and global prompts
+    // are the shared defaults and live in the Library tab, so a folder workspace
+    // never mixes them in, and with a single source it shows no source sub-tabs.
+    if (activeTab.kind === 'folder') {
+      return resolvePromptsForApp(activeTab.folderSource ? [activeTab.folderSource] : [], presetsRaw);
+    }
     const sources = [builtinSource];
     if (globalSource) sources.push(globalSource);
-    if (activeTab.folderSource) sources.push(activeTab.folderSource);
     return resolvePromptsForApp(sources, presetsRaw);
-  }, [globalSource, activeTab.id, activeTab.folderSource]);
+  }, [globalSource, activeTab.id, activeTab.kind, activeTab.folderSource]);
+
+  const folderPending = activeTab.kind === 'folder' && !activeTab.folderSource;
 
   function setSelectedKey(key: string) {
     setTabs((prev) => prev.map((tab) => (tab.id === activeTabId ? { ...tab, selectedKey: key } : tab)));
@@ -353,7 +360,9 @@ export default function App() {
         aria-label={desktop ? `${activeTab.label} workspace` : undefined}
         style={headerHeight ? ({ ['--pb-header-height']: `${headerHeight}px` } as CSSProperties) : undefined}
       >
-        {data.prompts.length === 0 ? (
+        {folderPending ? (
+          activeTab.state === 'loading' ? <Text>Loading prompts…</Text> : null
+        ) : data.prompts.length === 0 ? (
           <Text>No prompt Markdown files were found.</Text>
         ) : (
           <WorkspaceView
