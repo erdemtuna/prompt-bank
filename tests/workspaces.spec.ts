@@ -70,6 +70,27 @@ test('opening a recent adds a workspace tab showing its folder prompts', async (
   await expect(page.getByRole('button', { name: /Alpha Prompt, Folder/ })).toBeVisible();
 });
 
+test('opening the Recent folders menu does not paint over the app', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.getByRole('button', { name: /Global Tip, Global/ })).toBeVisible();
+
+  await page.getByRole('button', { name: 'Recent folders' }).click();
+  await expect(page.getByRole('menuitem', { name: 'Open alpha' })).toBeVisible();
+
+  // Regression: Fluent's applyStylesToPortals used to copy the app-shell
+  // className onto the menu's portal FluentProvider, making it a full-viewport
+  // opaque sheet (z-index 1000000) that hid the whole app behind the menu.
+  // The masthead and content must stay hit-testable while the menu is open.
+  const covered = await page.evaluate(() => {
+    const h1 = document.querySelector('h1');
+    if (!h1) return true;
+    const r = h1.getBoundingClientRect();
+    const hit = document.elementFromPoint(r.left + 5, r.top + r.height / 2);
+    return !(hit === h1 || h1.contains(hit as Node));
+  });
+  expect(covered).toBe(false);
+});
+
 test('switching tabs shows each workspace independently', async ({ page }) => {
   await page.goto('/');
 

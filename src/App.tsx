@@ -304,8 +304,9 @@ export default function App() {
   const promptCountLabel = String(data.prompts.length).padStart(2, '0');
 
   return (
-    <FluentProvider theme={swissTheme} className={styles.app}>
-      <div className={styles.accentBar} />
+    <FluentProvider theme={swissTheme}>
+      <div className={styles.app}>
+        <div className={styles.accentBar} />
       <header className={styles.masthead} ref={headerRef}>
         <div className={styles.mastheadInner}>
           <div className={styles.brand}>
@@ -368,6 +369,7 @@ export default function App() {
           />
         )}
       </main>
+      </div>
     </FluentProvider>
   );
 }
