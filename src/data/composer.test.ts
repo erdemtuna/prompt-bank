@@ -79,6 +79,16 @@ describe('composer', () => {
     ]);
   });
 
+  it('falls back to path matching when qualified keys are empty', () => {
+    const prompt = makePrompt('Hello {{ name }} from {{place}}.', 'a', undefined, 'prompts/a.md');
+    const result = composePrompt(prompt, { name: 'Ada', place: 'London' }, {}, {
+      validationIssues: [{ scope: 'prompt', path: 'prompts/a.md', promptKey: '', promptKeys: [''], message: 'Duplicate prompt id "a".' }]
+    });
+
+    expect(result.canCopy).toBe(false);
+    expect(result.validationBlockers).toEqual(['prompts/a.md: Duplicate prompt id "a".']);
+  });
+
   it('only blocks preset validation issues for prompts that use model placeholders', () => {
     const presetIssue = { scope: 'preset' as const, path: 'model-presets.yaml', message: 'Duplicate model preset id "gpt".' };
 

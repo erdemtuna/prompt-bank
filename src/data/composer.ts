@@ -106,10 +106,12 @@ function modelBuiltInLabel(name: typeof modelBuiltIns[number]): string {
 }
 
 function issueAppliesToPrompt(issue: ValidationIssue, prompt: Prompt): boolean {
-  const hasQualifiedKey = (typeof issue.promptKey === 'string' && issue.promptKey.length > 0)
-    || (Array.isArray(issue.promptKeys) && issue.promptKeys.length > 0);
-  if (hasQualifiedKey) {
-    return issue.promptKey === prompt.key || issue.promptKeys?.includes(prompt.key) === true;
+  const qualifiedKeys = [
+    ...(typeof issue.promptKey === 'string' ? [issue.promptKey] : []),
+    ...(Array.isArray(issue.promptKeys) ? issue.promptKeys : [])
+  ].filter((key) => key.length > 0);
+  if (qualifiedKeys.length > 0) {
+    return qualifiedKeys.includes(prompt.key);
   }
   return issue.path === prompt.path || issue.paths?.includes(prompt.path) === true || issue.promptPaths?.includes(prompt.path) === true;
 }
