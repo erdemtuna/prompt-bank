@@ -24,6 +24,7 @@ Thumbs.db
 
 # Tauri / Rust build output
 src-tauri/target/
+src-tauri/gen/
 **/*.rs.bk
 
 # Logs

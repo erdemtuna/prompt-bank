@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Baseline core permissions for the single main window. No filesystem, dialog, shell, http, or updater permissions are exposed to the frontend; every private filesystem access goes through the app's own narrow commands, and the folder picker runs in Rust.",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}

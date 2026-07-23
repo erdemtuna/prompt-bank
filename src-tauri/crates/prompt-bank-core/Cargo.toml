@@ -1,0 +1,14 @@
+[package]
+name = "prompt-bank-core"
+version = "0.1.0"
+edition = "2021"
+description = "Pure filesystem, home resolution, and workspace registry logic for Prompt Bank. No Tauri or webview dependency, so it is unit testable on a headless runner."
+license = "MIT"
+publish = false
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+walkdir = "2"
+dirs = "5"
+tempfile = "3"
