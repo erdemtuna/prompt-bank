@@ -26,3 +26,21 @@ jobs:
       - run: npm run guard:private
       - run: npm test
       - run: npm run build
+
+  rust-core:
+    name: Rust core tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install the pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.94.0"
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - name: Test the pure core crate (no webview libraries needed)
+        working-directory: src-tauri
+        run: cargo test -p prompt-bank-core --locked
