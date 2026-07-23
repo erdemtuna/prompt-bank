@@ -2,9 +2,19 @@
 
 This guide shows how to write a Prompt Bank prompt. For the exact rules, see `schema.md`, which is the normative contract. This page is the friendly version.
 
+## Where prompts live
+
+The same prompt format works in three places, and Prompt Bank shows them together with a source label:
+
+- Built in: `prompts/<category>/` in this repository, bundled with the app.
+- Global: `~/.prompt-bank/<category>/`, your personal set, read at runtime.
+- Folder: `<a folder you open>/.prompt-bank/<category>/`, read at runtime when you open that folder.
+
+Global and folder prompts stay on your machine and are never committed or bundled. The rest of this guide applies to all three.
+
 ## The shape of a prompt
 
-Every prompt is a single Markdown file under `prompts/<category>/`. It has YAML frontmatter, then the template body.
+Every prompt is a single Markdown file under a `<category>/` folder in one of the locations above. It has YAML frontmatter, then the template body.
 
 ```markdown
 ---
