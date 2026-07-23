@@ -265,13 +265,19 @@ export default function App() {
     pickWorkspace()
       .then((result) => {
         if (!result) return;
+        // Bump the sequence so any in-flight open_workspace for this id cannot
+        // later turn this freshly picked, ready tab into an error.
+        const seq = loadSeqRef.current + 1;
+        loadSeqRef.current = seq;
         setTabs((prev) => {
           if (prev.some((tab) => tab.id === result.workspaceId)) {
             return prev.map((tab) =>
-              tab.id === result.workspaceId ? { ...tab, state: 'ready', label: result.label, folderSource: result.source, error: undefined } : tab
+              tab.id === result.workspaceId
+                ? { ...tab, state: 'ready', label: result.label, folderSource: result.source, error: undefined, loadSeq: seq }
+                : tab
             );
           }
-          return [...prev, { id: result.workspaceId, kind: 'folder', label: result.label, folderSource: result.source, state: 'ready' }];
+          return [...prev, { id: result.workspaceId, kind: 'folder', label: result.label, folderSource: result.source, state: 'ready', loadSeq: seq }];
         });
         setActiveTabId(result.workspaceId);
         refreshRecents();
@@ -341,7 +347,11 @@ export default function App() {
         ) : null}
       </header>
 
-      <main className={styles.main} style={headerHeight ? ({ ['--pb-header-height']: `${headerHeight}px` } as CSSProperties) : undefined}>
+      <main
+        className={styles.main}
+        aria-label={desktop ? `${activeTab.label} workspace` : undefined}
+        style={headerHeight ? ({ ['--pb-header-height']: `${headerHeight}px` } as CSSProperties) : undefined}
+      >
         {data.prompts.length === 0 ? (
           <Text>No prompt Markdown files were found.</Text>
         ) : (

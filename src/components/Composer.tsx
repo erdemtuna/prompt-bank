@@ -448,6 +448,11 @@ export function Composer({ prompt, presets, issues }: Props) {
   const [optionValues, setOptionValues] = useState<OptionValues>({});
   const [feedback, setFeedback] = useState<{ kind: 'success' | 'error'; message: string } | undefined>();
 
+  // Reset on the prompt key and a stable preset signature, not the presets array
+  // identity, which is recreated on every data recompute (a global load or tab
+  // switch) and would otherwise erase in-progress input.
+  const presetSignature = presets.map((preset) => preset.id).join('|');
+
   useEffect(() => {
     if (!prompt) {
       setValues({});
@@ -462,7 +467,7 @@ export function Composer({ prompt, presets, issues }: Props) {
     setModelId(promptUsesModelPlaceholder(prompt) ? defaultModelId : '');
     setRubberDuckModelId(promptUsesRubberDuckModelPlaceholder(prompt) ? defaultModelId : '');
     setFeedback(undefined);
-  }, [prompt?.key, presets]);
+  }, [prompt?.key, presetSignature]);
 
   const selectedPreset = useMemo(() => presets.find((preset) => preset.id === modelId), [modelId, presets]);
   const selectedRubberDuckPreset = useMemo(() => presets.find((preset) => preset.id === rubberDuckModelId), [rubberDuckModelId, presets]);

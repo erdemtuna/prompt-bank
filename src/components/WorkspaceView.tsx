@@ -108,11 +108,15 @@ export function WorkspaceView({
     [availableSources, data.prompts]
   );
 
+  const effectiveSourceFilter =
+    sourceFilter === 'all' || availableSources.some((source) => source === sourceFilter) ? sourceFilter : 'all';
+  const effectiveCategory = category === 'all' || categories.some((item) => item === category) ? category : 'all';
+
   const filteredPrompts = useMemo(() => {
     const query = search.trim().toLocaleLowerCase();
     return data.prompts.filter((prompt) => {
-      const categoryMatches = category === 'all' || prompt.category === category;
-      const sourceMatches = sourceFilter === 'all' || prompt.source === sourceFilter;
+      const categoryMatches = effectiveCategory === 'all' || prompt.category === effectiveCategory;
+      const sourceMatches = effectiveSourceFilter === 'all' || prompt.source === effectiveSourceFilter;
       const searchMatches =
         !query ||
         [prompt.title, prompt.description, prompt.category, prompt.tags.join(' '), prompt.template]
@@ -121,13 +125,13 @@ export function WorkspaceView({
           .includes(query);
       return categoryMatches && sourceMatches && searchMatches;
     });
-  }, [category, data.prompts, search, sourceFilter]);
+  }, [data.prompts, effectiveCategory, effectiveSourceFilter, search]);
 
   const selectedPrompt = data.prompts.find((prompt) => prompt.key === selectedPromptKey) ?? data.prompts[0];
   const selectedPromptIsVisible = Boolean(
     selectedPrompt && filteredPrompts.some((prompt) => prompt.key === selectedPrompt.key)
   );
-  const filtersAreActive = Boolean(search.trim()) || category !== 'all' || sourceFilter !== 'all';
+  const filtersAreActive = Boolean(search.trim()) || effectiveCategory !== 'all' || effectiveSourceFilter !== 'all';
 
   function clearFilters() {
     onSearchChange('');
@@ -147,10 +151,10 @@ export function WorkspaceView({
       <PromptLibrary
         prompts={filteredPrompts}
         categories={categories}
-        selectedPromptKey={selectedPromptKey}
+        selectedPromptKey={selectedPrompt?.key}
         search={search}
-        category={category}
-        sourceFilter={sourceFilter}
+        category={effectiveCategory}
+        sourceFilter={effectiveSourceFilter}
         sourceOptions={sourceOptions}
         showSourceFilter={showSourceFilter}
         totalPromptCount={data.prompts.length}

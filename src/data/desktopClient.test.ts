@@ -8,7 +8,12 @@ import {
   pickWorkspace,
   readGlobalPrompts,
   removeWorkspace,
-  setWindowTitle
+  setWindowTitle,
+  type CommandErrorDto,
+  type GlobalPromptsDto,
+  type OpenedWorkspaceDto,
+  type PromptFileDto,
+  type WorkspaceSummaryDto
 } from './desktopClient';
 
 afterEach(() => clearMocks());
@@ -89,5 +94,24 @@ describe('desktopClient', () => {
 
     await setWindowTitle('Prompt Bank: proj');
     expect(spy).toHaveBeenCalledWith('set_window_title', { title: 'Prompt Bank: proj' });
+  });
+});
+
+describe('DTO shapes match the Rust core golden test', () => {
+  it('serializes each DTO exactly like src-tauri/crates/prompt-bank-core/tests/dto.rs', () => {
+    const promptFile: PromptFileDto = { relativePath: 'review/foo.md', contents: 'body' };
+    expect(JSON.stringify(promptFile)).toBe('{"relativePath":"review/foo.md","contents":"body"}');
+
+    const global: GlobalPromptsDto = { files: [{ relativePath: 'a.md', contents: 'x' }] };
+    expect(JSON.stringify(global)).toBe('{"files":[{"relativePath":"a.md","contents":"x"}]}');
+
+    const opened: OpenedWorkspaceDto = { workspaceId: 'ws1', label: 'proj', files: [] };
+    expect(JSON.stringify(opened)).toBe('{"workspaceId":"ws1","label":"proj","files":[]}');
+
+    const summary: WorkspaceSummaryDto = { id: 'ws1', label: 'proj', displayPath: '/home/u/proj', lastOpened: '123' };
+    expect(JSON.stringify(summary)).toBe('{"id":"ws1","label":"proj","displayPath":"/home/u/proj","lastOpened":"123"}');
+
+    const error: CommandErrorDto = { kind: 'symlink', message: 'A symlink was found where it is not allowed.' };
+    expect(JSON.stringify(error)).toBe('{"kind":"symlink","message":"A symlink was found where it is not allowed."}');
   });
 });
