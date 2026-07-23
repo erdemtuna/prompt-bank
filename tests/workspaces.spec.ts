@@ -50,6 +50,13 @@ test.beforeEach(async ({ page }) => {
   await mockDesktop(page);
 });
 
+// A folder prompt's title appears both in the library index row and, because the
+// mock sets each description to "<title> prompt", in the composer's info tooltip
+// button. Scope row assertions to the library region so a bare title regex
+// resolves to exactly the index row rather than also matching that tooltip.
+const libraryButton = (page: Page, name: RegExp) =>
+  page.getByRole('region', { name: 'Prompt library' }).getByRole('button', { name });
+
 test('the Library tab shows built in and global prompts with source labels', async ({ page }) => {
   await page.goto('/');
 
@@ -67,7 +74,9 @@ test('opening a recent adds a workspace tab showing its folder prompts', async (
   await page.getByRole('menuitem', { name: 'Open alpha' }).click();
 
   await expect(page.getByRole('tab', { name: 'alpha' })).toBeVisible();
-  await expect(page.getByRole('button', { name: /Alpha Prompt, Folder/ })).toBeVisible();
+  await expect(libraryButton(page, /Alpha Prompt/)).toBeVisible();
+  // A folder tab holds a single source, so it shows no source sub-tabs.
+  await expect(page.getByRole('group', { name: 'Filter by source' })).toHaveCount(0);
 });
 
 test('opening the Recent folders menu does not paint over the app', async ({ page }) => {
@@ -96,18 +105,18 @@ test('switching tabs shows each workspace independently', async ({ page }) => {
 
   await page.getByRole('button', { name: 'Recent folders' }).click();
   await page.getByRole('menuitem', { name: 'Open alpha' }).click();
-  await expect(page.getByRole('button', { name: /Alpha Prompt, Folder/ })).toBeVisible();
+  await expect(libraryButton(page, /Alpha Prompt/)).toBeVisible();
 
   // Back to the Library tab: the folder prompt is gone, global remains.
   await page.getByRole('tab', { name: 'Library' }).click();
-  await expect(page.getByRole('button', { name: /Alpha Prompt/ })).toHaveCount(0);
+  await expect(libraryButton(page, /Alpha Prompt/)).toHaveCount(0);
   await expect(page.getByRole('button', { name: /Global Tip, Global/ })).toBeVisible();
 
   // Open a second recent and switch to it.
   await page.getByRole('button', { name: 'Recent folders' }).click();
   await page.getByRole('menuitem', { name: 'Open beta' }).click();
-  await expect(page.getByRole('button', { name: /Beta Prompt, Folder/ })).toBeVisible();
-  await expect(page.getByRole('button', { name: /Alpha Prompt/ })).toHaveCount(0);
+  await expect(libraryButton(page, /Beta Prompt/)).toBeVisible();
+  await expect(libraryButton(page, /Alpha Prompt/)).toHaveCount(0);
 });
 
 test('a folder tab can be closed, returning to the Library', async ({ page }) => {
@@ -127,7 +136,7 @@ test('the folder picker opens a new workspace tab', async ({ page }) => {
 
   await page.getByRole('button', { name: 'Open folder' }).click();
   await expect(page.getByRole('tab', { name: 'picked' })).toBeVisible();
-  await expect(page.getByRole('button', { name: /Picked Prompt, Folder/ })).toBeVisible();
+  await expect(libraryButton(page, /Picked Prompt/)).toBeVisible();
 });
 
 test('forgetting a recent removes it from the menu', async ({ page }) => {
@@ -169,20 +178,23 @@ for (const width of [320, 390, 768]) {
   });
 }
 
-test('a source filter from one tab does not empty another tab', async ({ page }) => {
+test('a folder tab has no source filter and the Library source filter cannot empty it', async ({ page }) => {
   await page.goto('/');
 
   await page.getByRole('button', { name: 'Recent folders' }).click();
   await page.getByRole('menuitem', { name: 'Open alpha' }).click();
-  await expect(page.getByRole('button', { name: /Alpha Prompt, Folder/ })).toBeVisible();
+  await expect(libraryButton(page, /Alpha Prompt/)).toBeVisible();
+  // The folder tab is single source, so there are no source sub-tabs to switch between.
+  await expect(page.getByRole('group', { name: 'Filter by source' })).toHaveCount(0);
 
-  // Filter the alpha tab down to Folder only.
-  await page.getByRole('group', { name: 'Filter by source' }).getByRole('button', { name: 'Folder' }).click();
-  await expect(page.getByRole('button', { name: /Alpha Prompt, Folder/ })).toBeVisible();
-
-  // The Library tab has no Folder source; it must still show its prompts, not an empty view.
+  // Narrow the Library tab down to its Global source only.
   await page.getByRole('tab', { name: 'Library' }).click();
+  await page.getByRole('group', { name: 'Filter by source' }).getByRole('button', { name: 'Global' }).click();
   await expect(page.getByRole('button', { name: /Global Tip, Global/ })).toBeVisible();
+
+  // Back on the folder tab, the inherited Global filter must not empty it.
+  await page.getByRole('tab', { name: 'alpha' }).click();
+  await expect(libraryButton(page, /Alpha Prompt/)).toBeVisible();
 });
 
 test('a delayed global load preserves in-progress composer input', async ({ page }) => {
@@ -230,12 +242,12 @@ test('a picked folder stays ready even if a prior in-flight load for it rejects'
   await page.getByRole('button', { name: 'Recent folders' }).click();
   await page.getByRole('menuitem', { name: 'Open alpha' }).click();
   await page.getByRole('button', { name: 'Open folder' }).click();
-  await expect(page.getByRole('button', { name: /Alpha Prompt, Folder/ })).toBeVisible();
+  await expect(libraryButton(page, /Alpha Prompt/)).toBeVisible();
 
   // Let the stale rejection fire; the picked tab must not turn into an error.
   await page.waitForTimeout(900);
   await expect(page.getByText(/could not be read/)).toHaveCount(0);
-  await expect(page.getByRole('button', { name: /Alpha Prompt, Folder/ })).toBeVisible();
+  await expect(libraryButton(page, /Alpha Prompt/)).toBeVisible();
 });
 
 test('re-picking the same folder with changed content refreshes composer defaults', async ({ page }) => {
@@ -260,7 +272,7 @@ test('re-picking the same folder with changed content refreshes composer default
 
   await page.goto('/');
   await page.getByRole('button', { name: 'Open folder' }).click();
-  await page.getByRole('button', { name: /Repick Prompt, Folder/ }).click();
+  await page.getByRole('button', { name: /Repick Prompt/ }).click();
   await expect(page.getByLabel('topic', { exact: true })).toHaveValue('first-default');
 
   // Edit the field, then re-pick the same folder whose content changed.

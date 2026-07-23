@@ -96,7 +96,10 @@ export function WorkspaceView({
     () => sourceOrder.filter((source) => data.prompts.some((prompt) => prompt.source === source)),
     [data.prompts]
   );
-  const showSourceFilter = availableSources.some((source) => source !== 'builtin');
+  // Only offer the source sub-tabs when a view spans more than one source. A
+  // folder tab holds a single source, so it shows no sub-tabs and no per-row
+  // source labels; the Library tab still separates built in from global.
+  const showSourceFilter = availableSources.length > 1;
   const sourceOptions = useMemo(
     () => [
       { value: 'all', label: 'All' },
