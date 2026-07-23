@@ -7,6 +7,7 @@ Thanks for your interest in Prompt Bank. Contributions of prompts, code, and doc
 - One prompt per file under `prompts/<category>/`.
 - Keep the `id` stable, unique, and kebab case, because links and habits depend on it.
 - Keep prompts free of personal, employer, or proprietary content, real names, secrets, and machine specific paths. The example prompts are generic on purpose.
+- Your own private prompts belong in your global `~/.prompt-bank/` or a folder's `.prompt-bank/` directory, not in this repository. A boundary guard fails the build if a `.prompt-bank` path is ever tracked.
 - Every declared option must be used, and any prompt with options must include an `{{#allOptionsDisabled}}` fallback.
 - Run `npm run validate` before you open a pull request.
 
