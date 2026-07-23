@@ -19,6 +19,13 @@ playwright/.cache/
 .DS_Store
 Thumbs.db
 
+# Private prompt sources (never commit; may appear at any depth)
+**/.prompt-bank/
+
+# Tauri / Rust build output
+src-tauri/target/
+**/*.rs.bk
+
 # Logs
 *.log
 npm-debug.log*

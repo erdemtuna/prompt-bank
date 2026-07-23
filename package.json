@@ -28,9 +28,10 @@
     "build": "tsc --noEmit && vite build",
     "test": "vitest run",
     "validate": "tsx scripts/validate.ts",
+    "guard:private": "tsx scripts/check-private-paths.ts",
     "e2e": "playwright test",
-    "check": "npm run validate && npm test && npm run build",
-    "ci": "npm run validate && npm test && npm run build"
+    "check": "npm run validate && npm run guard:private && npm test && npm run build",
+    "ci": "npm run validate && npm run guard:private && npm test && npm run build"
   },
   "dependencies": {
     "@fluentui/react-components": "^9.73.8",
