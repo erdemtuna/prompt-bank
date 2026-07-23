@@ -92,7 +92,7 @@ function validationBlockersForPrompt(prompt: Prompt, issues: ValidationIssue[], 
       if (issue.scope === 'global') return true;
       if (issue.scope === 'preset') return usesAnyModelPlaceholder;
       if (!usesAnyModelPlaceholder && isDefaultModelIssue(issue)) return false;
-      return issueAppliesToPrompt(issue, prompt.path);
+      return issueAppliesToPrompt(issue, prompt);
     })
     .map((issue) => `${issue.path ? `${issue.path}: ` : ''}${issue.message}`);
 }
@@ -105,8 +105,11 @@ function modelBuiltInLabel(name: typeof modelBuiltIns[number]): string {
   return name === 'rubberDuckModel' ? 'alternative model preset' : 'general model preset';
 }
 
-function issueAppliesToPrompt(issue: ValidationIssue, promptPath: string): boolean {
-  return issue.path === promptPath || issue.paths?.includes(promptPath) === true || issue.promptPaths?.includes(promptPath) === true;
+function issueAppliesToPrompt(issue: ValidationIssue, prompt: Prompt): boolean {
+  if (issue.promptKey !== undefined || issue.promptKeys !== undefined) {
+    return issue.promptKey === prompt.key || issue.promptKeys?.includes(prompt.key) === true;
+  }
+  return issue.path === prompt.path || issue.paths?.includes(prompt.path) === true || issue.promptPaths?.includes(prompt.path) === true;
 }
 
 function isDefaultModelIssue(issue: ValidationIssue): boolean {
