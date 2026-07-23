@@ -4,6 +4,9 @@ mod commands;
 mod dto;
 mod state;
 
+#[cfg(test)]
+mod ipc_smoke;
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())

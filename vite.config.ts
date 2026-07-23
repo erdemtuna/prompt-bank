@@ -14,12 +14,10 @@ export default defineConfig({
   },
   envPrefix: ['VITE_', 'TAURI_ENV_'],
   build: {
-    target: process.env.TAURI_ENV_PLATFORM
-      ? process.env.TAURI_ENV_PLATFORM === 'windows'
-        ? 'chrome105'
-        : 'safari13'
-      : undefined,
-    minify: process.env.TAURI_ENV_DEBUG ? false : 'esbuild',
+    // Prompt Bank targets modern webviews only (webkit2gtk, WebView2, WKWebView),
+    // so no down-leveling. Vite 8 / rolldown cannot transform down to an old
+    // target such as safari13, and none is needed.
+    minify: !process.env.TAURI_ENV_DEBUG,
     sourcemap: !!process.env.TAURI_ENV_DEBUG
   },
   test: {
