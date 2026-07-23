@@ -216,3 +216,36 @@ test('a picked folder stays ready even if a prior in-flight load for it rejects'
   await expect(page.getByText(/could not be read/)).toHaveCount(0);
   await expect(page.getByRole('button', { name: /Alpha Prompt, Folder/ })).toBeVisible();
 });
+
+test('re-picking the same folder with changed content refreshes composer defaults', async ({ page }) => {
+  await page.addInitScript(() => {
+    const internals = (window as unknown as { __TAURI_INTERNALS__: Internals }).__TAURI_INTERNALS__;
+    const base = internals.invoke;
+    let pickCount = 0;
+    internals.invoke = (cmd, args) => {
+      if (cmd === 'pick_workspace') {
+        pickCount += 1;
+        const def = pickCount === 1 ? 'first-default' : 'second-default';
+        const md =
+          '---\nid: repick-prompt\ntitle: Repick Prompt\ndescription: A prompt\ncategory: review\n' +
+          'variables:\n  - name: topic\n    description: A topic\n    required: false\n    default: ' +
+          def +
+          '\n---\nUse {{topic}} now.';
+        return Promise.resolve({ workspaceId: 'ws1', label: 'alpha', files: [{ relativePath: 'a.md', contents: md }] });
+      }
+      return base(cmd, args);
+    };
+  });
+
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Open folder' }).click();
+  await page.getByRole('button', { name: /Repick Prompt, Folder/ }).click();
+  await expect(page.getByLabel('topic', { exact: true })).toHaveValue('first-default');
+
+  // Edit the field, then re-pick the same folder whose content changed.
+  await page.getByLabel('topic', { exact: true }).fill('edited');
+  await page.getByRole('button', { name: 'Open folder' }).click();
+
+  // The composer refreshes to the new default, not the edit or the old default.
+  await expect(page.getByLabel('topic', { exact: true })).toHaveValue('second-default');
+});
