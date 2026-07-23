@@ -448,6 +448,17 @@ export function Composer({ prompt, presets, issues }: Props) {
   const [optionValues, setOptionValues] = useState<OptionValues>({});
   const [feedback, setFeedback] = useState<{ kind: 'success' | 'error'; message: string } | undefined>();
 
+  // Reset when the selected prompt's definition changes, using a stable signature
+  // over its key and content. This is stable across a data recompute (a global
+  // load or tab switch re-parses the same file to a new object with the same
+  // signature, so input is preserved), but changes when the file content itself
+  // changes (for example re-picking the same folder after edits), so defaults
+  // refresh. The presets signature ignores array identity for the same reason.
+  const presetSignature = presets.map((preset) => preset.id).join('|');
+  const promptSignature = prompt
+    ? [prompt.key, prompt.template, JSON.stringify(prompt.variables), JSON.stringify(prompt.options), prompt.defaultModelId ?? ''].join('\u0000')
+    : '';
+
   useEffect(() => {
     if (!prompt) {
       setValues({});
@@ -462,7 +473,7 @@ export function Composer({ prompt, presets, issues }: Props) {
     setModelId(promptUsesModelPlaceholder(prompt) ? defaultModelId : '');
     setRubberDuckModelId(promptUsesRubberDuckModelPlaceholder(prompt) ? defaultModelId : '');
     setFeedback(undefined);
-  }, [prompt?.path, presets, prompt]);
+  }, [promptSignature, presetSignature]);
 
   const selectedPreset = useMemo(() => presets.find((preset) => preset.id === modelId), [modelId, presets]);
   const selectedRubberDuckPreset = useMemo(() => presets.find((preset) => preset.id === rubberDuckModelId), [rubberDuckModelId, presets]);
