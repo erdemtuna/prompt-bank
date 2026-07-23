@@ -10,8 +10,47 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  create-release:
+    name: Create the draft release
+    if: github.event_name == 'push'
+    permissions:
+      contents: write
+    runs-on: ubuntu-22.04
+    outputs:
+      release_id: ${{ steps.create.outputs.release_id }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Resolve the version from package.json
+        id: version
+        run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Create a single draft release for every matrix job to upload to
+        id: create
+        uses: actions/github-script@v7
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
+        with:
+          script: |
+            const { data } = await github.rest.repos.createRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              tag_name: process.env.RELEASE_TAG,
+              name: `Prompt Bank ${process.env.RELEASE_VERSION}`,
+              body: 'Unsigned builds. Download the installer for your operating system below. macOS Gatekeeper and Windows SmartScreen may warn on first open until code signing is added.',
+              draft: true,
+              prerelease: false,
+            });
+            core.setOutput('release_id', data.id);
+
   build:
     name: Build installers (${{ matrix.name }})
+    needs: create-release
+    # Run for a tag push (after the draft exists) and for a manual dispatch (create-release is skipped).
+    if: ${{ always() && needs.create-release.result != 'failure' && needs.create-release.result != 'cancelled' }}
     permissions:
       contents: write
     strategy:
@@ -66,20 +105,15 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
-      - name: Build installers, and publish a draft release on a version tag
-        id: tauri
+      - name: Build installers and upload them to the shared draft release
         uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          # On a v* tag push this creates/updates a draft GitHub release and
-          # uploads the installers. On a manual run tagName is empty, so the
-          # action only builds and the artifacts are uploaded in the next step.
-          tagName: ${{ github.event_name == 'push' && github.ref_name || '' }}
-          releaseName: ${{ github.event_name == 'push' && 'Prompt Bank __VERSION__' || '' }}
-          releaseBody: ${{ github.event_name == 'push' && 'Unsigned builds. Download the installer for your operating system below. macOS Gatekeeper and Windows SmartScreen may warn on first open until code signing is added.' || '' }}
-          releaseDraft: true
-          prerelease: false
+          # On a tag push every matrix job uploads to the same pre-created draft, which avoids the
+          # multi-job race where each job would otherwise create its own release. On a manual run
+          # releaseId is empty, so the action only builds and the artifacts are uploaded below.
+          releaseId: ${{ needs.create-release.outputs.release_id }}
           args: ${{ matrix.args }}
 
       - name: Upload installers as artifacts (manual test builds)
@@ -92,3 +126,26 @@ jobs:
             src-tauri/target/*/release/bundle/**
           if-no-files-found: ignore
           retention-days: 7
+
+  publish-release:
+    name: Publish the release
+    needs: [create-release, build]
+    # Only publishes when every build job succeeded, so a partial release is never made public.
+    if: github.event_name == 'push'
+    permissions:
+      contents: write
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Flip the completed draft to a published release
+        uses: actions/github-script@v7
+        env:
+          RELEASE_ID: ${{ needs.create-release.outputs.release_id }}
+        with:
+          script: |
+            await github.rest.repos.updateRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              release_id: Number(process.env.RELEASE_ID),
+              draft: false,
+              make_latest: 'true',
+            });

@@ -122,24 +122,43 @@ describe('composer', () => {
     );
     const result = composePrompt(prompt, { name: 'UI', place: 'API' }, {}, { optionValues: { frontendFocus: true, backendFocus: false } });
 
-    expect(result.text).toBe('Start.\n\nFrontend UI.\n\nEnd.');
+    expect(result.text).toBe('Start.\nFrontend UI.\nEnd.');
     expect(result.canCopy).toBe(true);
   });
 
-  it('collapses blank lines and omits disabled blocks when the template uses CRLF line endings', () => {
+  it('renders stacked option blocks as a tight list without injecting blank lines, on LF and CRLF', () => {
+    // Blocks stacked with no blank lines between them, and a blank line before and after the list.
+    const source = 'Have them focus on:\n\n{{#option frontendFocus}}\n- Frontend {{name}}.\n{{/option}}\n{{#option backendFocus}}\n- Backend {{place}}.\n{{/option}}\n\nPresent findings.';
+
+    for (const template of [source, source.replace(/\n/g, '\r\n')]) {
+      const prompt = makePromptWithOptions(template);
+
+      const bothEnabled = composePrompt(prompt, { name: 'UI', place: 'API' }, {}, { optionValues: { frontendFocus: true, backendFocus: true } });
+      expect(bothEnabled.text).toBe('Have them focus on:\n\n- Frontend UI.\n- Backend API.\n\nPresent findings.');
+      expect(bothEnabled.text).not.toContain('\r');
+
+      const backendOnly = composePrompt(prompt, { name: 'UI', place: 'API' }, {}, { optionValues: { frontendFocus: false, backendFocus: true } });
+      expect(backendOnly.text).toBe('Have them focus on:\n\n- Backend API.\n\nPresent findings.');
+
+      const noneEnabled = composePrompt(prompt, { name: 'UI', place: 'API' }, {}, { optionValues: { frontendFocus: false, backendFocus: false } });
+      expect(noneEnabled.text).toBe('Have them focus on:\n\nPresent findings.');
+    }
+  });
+
+  it('omits disabled blocks and keeps tight output when the template uses CRLF line endings', () => {
     const prompt = makePromptWithOptions(
       'Start.\n{{#option frontendFocus}}\nFrontend {{name}}.\n{{/option}}\n{{#option backendFocus}}\nBackend {{place}}.\n{{/option}}\nEnd.'.replace(/\n/g, '\r\n')
     );
 
     const bothEnabled = composePrompt(prompt, { name: 'UI', place: 'API' }, {}, { optionValues: { frontendFocus: true, backendFocus: true } });
-    expect(bothEnabled.text).toBe('Start.\n\nFrontend UI.\n\nBackend API.\n\nEnd.');
+    expect(bothEnabled.text).toBe('Start.\nFrontend UI.\nBackend API.\nEnd.');
     expect(bothEnabled.text).not.toContain('\r');
 
     const backendOnly = composePrompt(prompt, { name: 'UI', place: 'API' }, {}, { optionValues: { frontendFocus: false, backendFocus: true } });
-    expect(backendOnly.text).toBe('Start.\n\nBackend API.\n\nEnd.');
+    expect(backendOnly.text).toBe('Start.\nBackend API.\nEnd.');
   });
 
-  it('collapses whitespace-only blank lines and leftover gaps under CRLF when an option is disabled', () => {
+  it('normalizes a whitespace-only separator line to a clean blank line and collapses leftover gaps under CRLF', () => {
     // The separator line between the option blocks holds only a space and a tab, and the whole template uses CRLF.
     const template = [
       'Focus on:',
@@ -160,6 +179,48 @@ describe('composer', () => {
 
     const bothEnabled = composePrompt(prompt, { name: 'UI', place: 'API' }, {}, { optionValues: { frontendFocus: true, backendFocus: true } });
     expect(bothEnabled.text).toBe('Focus on:\n\n- Frontend UI.\n\n- Backend API.');
+    expect(bothEnabled.text).not.toMatch(/\n[ \t]+\n/);
+  });
+
+  it('renders three stacked options with a standalone all-off fallback cleanly, on LF and CRLF', () => {
+    const source = [
+      'Have them focus on:',
+      '',
+      '{{#option frontendFocus}}',
+      '- Frontend {{name}}.',
+      '{{/option}}',
+      '{{#option backendFocus}}',
+      '- Backend {{place}}.',
+      '{{/option}}',
+      '{{#option crossTopicConcerns}}',
+      '- Cross-topic concerns.',
+      '{{/option}}',
+      '{{#allOptionsDisabled}}',
+      '- A concise general review of {{name}}.',
+      '{{/allOptionsDisabled}}',
+      '',
+      'Present findings.'
+    ].join('\n');
+    const options = [
+      { id: 'frontendFocus', label: 'Frontend', defaultEnabled: true },
+      { id: 'backendFocus', label: 'Backend', defaultEnabled: true },
+      { id: 'crossTopicConcerns', label: 'Cross-topic', defaultEnabled: true }
+    ];
+
+    for (const template of [source, source.replace(/\n/g, '\r\n')]) {
+      const prompt = makePromptWithOptions(template, options);
+
+      const allOn = composePrompt(prompt, { name: 'UI', place: 'API' }, {}, { optionValues: { frontendFocus: true, backendFocus: true, crossTopicConcerns: true } });
+      expect(allOn.text).toBe('Have them focus on:\n\n- Frontend UI.\n- Backend API.\n- Cross-topic concerns.\n\nPresent findings.');
+      expect(allOn.text).not.toContain('\r');
+      expect(allOn.text).not.toMatch(/\n[ \t*]*\n\n/);
+
+      const oneOn = composePrompt(prompt, { name: 'UI', place: 'API' }, {}, { optionValues: { frontendFocus: false, backendFocus: true, crossTopicConcerns: false } });
+      expect(oneOn.text).toBe('Have them focus on:\n\n- Backend API.\n\nPresent findings.');
+
+      const noneOn = composePrompt(prompt, { name: 'UI', place: 'API' }, {}, { optionValues: { frontendFocus: false, backendFocus: false, crossTopicConcerns: false } });
+      expect(noneOn.text).toBe('Have them focus on:\n\n- A concise general review of UI.\n\nPresent findings.');
+    }
   });
 
   it('does not require variables that are only used inside disabled option blocks', () => {

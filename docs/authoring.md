@@ -89,6 +89,8 @@ Do a general review across correctness and security.
 
 Disabled option blocks are left out of the copied text. They do not add instructions to avoid a topic. Keep mandatory guidance outside optional blocks, and do not nest conditional blocks.
 
+A conditional block tag that sits on its own line is treated as a control line and removed cleanly, so stacked blocks read as a tight list and a disabled block leaves no gap behind. Spacing follows your own blank lines: put a blank line between two blocks in the template to keep a blank line between them when both are enabled. Line endings are normalized, so prompts render the same on Windows, macOS, and Linux.
+
 ## Model preset labels
 
 Two built in placeholders insert a descriptive model label chosen in the interface. Use `{{model}}` for the general model and `{{rubberDuckModel}}` for an alternative or reviewer model. Do not declare variables named `model` or `rubberDuckModel`. Set `model_default` to a preset id from `model-presets.yaml` to preselect one.

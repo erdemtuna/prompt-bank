@@ -120,6 +120,19 @@ function normalizeLineEndings(text: string): string {
   return text.replace(/\r\n?/g, '\n');
 }
 
+/**
+ * Remove the indentation and trailing newline of a conditional block tag that sits alone on its
+ * line, the way Handlebars and Mustache treat "standalone" tags. This keeps the tag itself for the
+ * content pass while making sure a stacked block does not inject a blank line between its neighbours,
+ * so the author's own blank lines are the only ones that survive.
+ */
+function stripStandaloneBlockTagLines(template: string): string {
+  return template.replace(
+    /^[ \t]*(\{\{[ \t]*(?:#option[ \t]+[A-Za-z_][A-Za-z0-9_]*|\/option|#allOptionsDisabled|\/allOptionsDisabled)[ \t]*\}\})[ \t]*(?:\n|$)/gm,
+    '$1'
+  );
+}
+
 export function parsePromptFile(path: string, raw: string): { prompt?: ParsedPrompt; promptIdentity?: PromptIdentity; issues: ValidationIssue[] } {
   const issues: ValidationIssue[] = [];
   const match = normalizeLineEndings(raw).match(/^---\s*\n([\s\S]*?)\n---\s*\n?([\s\S]*)$/);
@@ -302,15 +315,17 @@ export function extractPlaceholders(template: string): string[] {
 }
 
 export function renderPromptTemplateOptions(template: string, optionValues: Record<string, boolean>, allOptionsDisabled: boolean): string {
-  return normalizeLineEndings(template)
+  return stripStandaloneBlockTagLines(normalizeLineEndings(template))
     .replace(/\{\{\s*#option\s+([A-Za-z_][A-Za-z0-9_]*)\s*\}\}([\s\S]*?)\{\{\s*\/option\s*\}\}/g, (_, optionId: string, content: string) =>
       optionValues[optionId] ? content : ''
     )
     .replace(/\{\{\s*#allOptionsDisabled\s*\}\}([\s\S]*?)\{\{\s*\/allOptionsDisabled\s*\}\}/g, (_, content: string) =>
       allOptionsDisabled ? content : ''
     )
-    // Collapse a run of blank lines (including lines that hold only spaces or tabs) to a single blank line.
-    .replace(/\n(?:[ \t]*\n){2,}/g, '\n\n')
+    // Reduce lines that hold only spaces or tabs to true blank lines so a stray whitespace line cannot survive.
+    .replace(/^[ \t]+$/gm, '')
+    // Collapse a run of blank lines to a single blank line.
+    .replace(/\n{3,}/g, '\n\n')
     .trim();
 }
 
