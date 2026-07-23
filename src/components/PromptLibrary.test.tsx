@@ -94,4 +94,14 @@ describe('PromptLibrary source filter', () => {
     expect(screen.queryByRole('group', { name: 'Filter by source' })).toBeNull();
     expect(screen.getByRole('button', { name: /Only Built in/ })).toBeTruthy();
   });
+
+  it('reports a filtered summary when filtering only by source', () => {
+    renderLibrary({
+      prompts: [makePrompt({ id: 'b', title: 'Global B', path: 'b.md', key: 'global:b.md', source: 'global', sourceLabel: 'Global' })],
+      sourceFilter: 'global',
+      totalPromptCount: 2
+    });
+
+    expect(screen.getByRole('status').textContent).toMatch(/01 \/ 02 match/);
+  });
 });

@@ -106,7 +106,9 @@ function modelBuiltInLabel(name: typeof modelBuiltIns[number]): string {
 }
 
 function issueAppliesToPrompt(issue: ValidationIssue, prompt: Prompt): boolean {
-  if (issue.promptKey !== undefined || issue.promptKeys !== undefined) {
+  const hasQualifiedKey = (typeof issue.promptKey === 'string' && issue.promptKey.length > 0)
+    || (Array.isArray(issue.promptKeys) && issue.promptKeys.length > 0);
+  if (hasQualifiedKey) {
     return issue.promptKey === prompt.key || issue.promptKeys?.includes(prompt.key) === true;
   }
   return issue.path === prompt.path || issue.paths?.includes(prompt.path) === true || issue.promptPaths?.includes(prompt.path) === true;

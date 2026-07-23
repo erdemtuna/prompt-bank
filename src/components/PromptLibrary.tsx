@@ -218,7 +218,7 @@ export function PromptLibrary({
   onShowSelectedPrompt
 }: Props) {
   const styles = useStyles();
-  const filtersAreActive = Boolean(search.trim()) || category !== 'all';
+  const filtersAreActive = Boolean(search.trim()) || category !== 'all' || sourceFilter !== 'all';
   const resultSummary = filtersAreActive
     ? `${String(prompts.length).padStart(2, '0')} / ${String(totalPromptCount).padStart(2, '0')} match`
     : `Index — ${String(totalPromptCount).padStart(2, '0')} prompts`;

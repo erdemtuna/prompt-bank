@@ -63,23 +63,34 @@ export function loadAppDataFromSources(
 export function resolvePromptsForApp(sources: PromptSourceInput[], modelPresetsRaw: string): AppData {
   const { presets, issues: presetIssues } = parseModelPresets('model-presets.yaml', modelPresetsRaw);
   const issues: ValidationIssue[] = [...presetIssues];
-  const resolved: Prompt[] = [];
+  const prompts: Prompt[] = [];
   let fileCount = 0;
 
   for (const source of sources) {
     const sourceLabel = source.sourceLabel ?? sourceLabels[source.source];
+    const parsed: Prompt[] = [];
     for (const [path, raw] of Object.entries(source.files)) {
       fileCount += 1;
       const key = qualifiedKey(source, path);
       const result = parsePromptFile(path, raw);
       issues.push(...result.issues.map((issue) => ({ ...issue, promptKey: key })));
       if (result.prompt) {
-        resolved.push({ ...result.prompt, source: source.source, sourceLabel, key });
+        parsed.push({ ...result.prompt, source: source.source, sourceLabel, key });
       }
     }
-  }
 
-  const prompts = dedupeWithinSource(resolved);
+    // Within one source instance a duplicate id is resolved deterministically and
+    // quietly: sort by qualified key in code unit order and keep the first per id.
+    // Separate instances, including two different folder workspaces, are never
+    // merged, so the same id in two folders stays as two distinct prompts.
+    const winnersById = new Map<string, Prompt>();
+    for (const prompt of [...parsed].sort(byQualifiedKey)) {
+      if (!winnersById.has(prompt.id)) {
+        winnersById.set(prompt.id, prompt);
+      }
+    }
+    prompts.push(...winnersById.values());
+  }
 
   if (fileCount === 0) {
     issues.push({ scope: 'global', message: 'No prompt Markdown files were found.' });
@@ -107,16 +118,8 @@ function qualifiedKey(source: PromptSourceInput, path: string): string {
   return `${source.source}:${path}`;
 }
 
-function dedupeWithinSource(prompts: Prompt[]): Prompt[] {
-  const seen = new Set<string>();
-  const winners: Prompt[] = [];
-  for (const prompt of [...prompts].sort((a, b) => a.key.localeCompare(b.key))) {
-    const dedupeKey = `${prompt.source}\u0000${prompt.id}`;
-    if (seen.has(dedupeKey)) continue;
-    seen.add(dedupeKey);
-    winners.push(prompt);
-  }
-  return winners;
+function byQualifiedKey(a: Prompt, b: Prompt): number {
+  return a.key < b.key ? -1 : a.key > b.key ? 1 : 0;
 }
 
 export function comparePromptsForLibrary(a: Prompt, b: Prompt): number {

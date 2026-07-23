@@ -607,6 +607,20 @@ describe('layered prompt sources', () => {
     expect(data.issues.some((issue) => issue.message.includes('Duplicate prompt id'))).toBe(false);
   });
 
+  it('keeps the same id from two different folder workspaces as separate prompts', () => {
+    const data = loadAppDataFromSources(
+      [
+        { source: 'folder', instanceId: 'ws1', files: { 'review.md': validRaw('shared', 'From ws1') } },
+        { source: 'folder', instanceId: 'ws2', files: { 'review.md': validRaw('shared', 'From ws2') } }
+      ],
+      'presets: []'
+    );
+
+    const matching = data.prompts.filter((prompt) => prompt.id === 'shared');
+    expect(matching).toHaveLength(2);
+    expect(matching.map((prompt) => prompt.key).sort()).toEqual(['folder:ws1:review.md', 'folder:ws2:review.md']);
+  });
+
   it('produces identical results for a legacy map and an explicit built in source input', () => {
     const files = {
       '../../prompts/one.md': validRaw('one', 'One'),
