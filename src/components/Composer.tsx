@@ -300,6 +300,35 @@ const useStyles = makeStyles({
     display: 'grid',
     gap: '20px'
   },
+  modelGroups: {
+    display: 'grid',
+    gap: '24px'
+  },
+  modelGroup: {
+    display: 'grid',
+    gap: '10px'
+  },
+  variantRow: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: '16px'
+  },
+  variantField: {
+    display: 'grid',
+    gap: '6px',
+    flexGrow: 1,
+    flexShrink: 1,
+    flexBasis: '130px',
+    minWidth: 0
+  },
+  variantLabel: {
+    fontFamily: 'var(--sw-mono)',
+    fontSize: '10px',
+    fontWeight: 500,
+    letterSpacing: '0.1em',
+    textTransform: 'uppercase',
+    color: 'var(--sw-muted)'
+  },
   field: {
     display: 'grid',
     gap: '8px'
@@ -440,8 +469,12 @@ type Props = {
   issues: ValidationIssue[];
 };
 
-function variantOptionText(variant: ModelPresetVariant): string {
-  if (variant.label) return variant.label;
+function variantOptionText(variant: ModelPresetVariant, kind: 'context' | 'reasoning'): string {
+  const label = variant.label.trim();
+  // The group already names the axis, so drop a trailing "context" or "reasoning"
+  // from the option text. The full label is still what gets copied.
+  const trimmed = label.toLowerCase().endsWith(` ${kind}`) ? label.slice(0, -(kind.length + 1)).trim() : label;
+  if (trimmed) return trimmed;
   return variant.id.charAt(0).toUpperCase() + variant.id.slice(1);
 }
 
@@ -449,6 +482,92 @@ function variantSelection(variants: ModelPresetVariant[] | undefined, defaultId:
   if (!variants || variants.length === 0) return '';
   if (variants.some((variant) => variant.id === current)) return current;
   return defaultId ?? variants[0].id;
+}
+
+type ModelGroupProps = {
+  styles: Record<string, string>;
+  name: 'General' | 'Alternative';
+  presets: ModelPreset[];
+  presetId: string;
+  preset: ModelPreset | undefined;
+  contextId: string;
+  reasoningId: string;
+  placeholder: string;
+  onPresetChange: (value: string) => void;
+  onContextChange: (value: string) => void;
+  onReasoningChange: (value: string) => void;
+};
+
+function ModelGroup({
+  styles,
+  name,
+  presets,
+  presetId,
+  preset,
+  contextId,
+  reasoningId,
+  placeholder,
+  onPresetChange,
+  onContextChange,
+  onReasoningChange
+}: ModelGroupProps) {
+  const contexts = preset?.contexts ?? [];
+  const reasoning = preset?.reasoning ?? [];
+
+  return (
+    <div className={styles.modelGroup}>
+      <span className={styles.labelText}>{name} model</span>
+      <Select
+        appearance="underline"
+        className={styles.underlineField}
+        aria-label={`${name} model`}
+        value={presetId}
+        disabled={presets.length === 0}
+        onChange={(_, data) => onPresetChange(data.value)}
+      >
+        {presetId ? null : <option value="">{placeholder}</option>}
+        {presets.map((item) => (
+          <option key={item.id} value={item.id}>{item.label}</option>
+        ))}
+      </Select>
+      {contexts.length > 0 || reasoning.length > 0 ? (
+        <div className={styles.variantRow}>
+          {contexts.length > 0 ? (
+            <div className={styles.variantField}>
+              <span className={styles.variantLabel}>Context</span>
+              <Select
+                appearance="underline"
+                className={styles.underlineField}
+                aria-label={`${name} context`}
+                value={contextId}
+                onChange={(_, data) => onContextChange(data.value)}
+              >
+                {contexts.map((variant) => (
+                  <option key={variant.id} value={variant.id}>{variantOptionText(variant, 'context')}</option>
+                ))}
+              </Select>
+            </div>
+          ) : null}
+          {reasoning.length > 0 ? (
+            <div className={styles.variantField}>
+              <span className={styles.variantLabel}>Reasoning</span>
+              <Select
+                appearance="underline"
+                className={styles.underlineField}
+                aria-label={`${name} reasoning`}
+                value={reasoningId}
+                onChange={(_, data) => onReasoningChange(data.value)}
+              >
+                {reasoning.map((variant) => (
+                  <option key={variant.id} value={variant.id}>{variantOptionText(variant, 'reasoning')}</option>
+                ))}
+              </Select>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 export function Composer({ prompt, presets, issues }: Props) {
@@ -633,111 +752,40 @@ export function Composer({ prompt, presets, issues }: Props) {
           {usesModel || usesRubberDuck ? (
             <section className={styles.section}>
               <span className={styles.eyebrow}>Model</span>
-              <div className={styles.fields}>
+              <div className={styles.modelGroups}>
                 {usesModel ? (
-                  <div className={styles.field}>
-                    <span className={styles.labelText}>General model</span>
-                    <Select
-                      appearance="underline"
-                      className={styles.underlineField}
-                      aria-label="General model"
-                      value={modelId}
-                      disabled={presets.length === 0}
-                      onChange={(_, data) => setModelId(data.value)}
-                    >
-                      {modelId ? null : <option value="">Select a model preset</option>}
-                      {presets.map((preset) => (
-                        <option key={preset.id} value={preset.id}>{preset.label}</option>
-                      ))}
-                    </Select>
-                  </div>
-                ) : null}
-                {usesModel && selectedPreset && selectedPreset.contexts.length > 0 ? (
-                  <div className={styles.field}>
-                    <span className={styles.labelText}>General context</span>
-                    <Select
-                      appearance="underline"
-                      className={styles.underlineField}
-                      aria-label="General context"
-                      value={modelContextId}
-                      onChange={(_, data) => setModelContextId(data.value)}
-                    >
-                      {selectedPreset.contexts.map((variant) => (
-                        <option key={variant.id} value={variant.id}>{variantOptionText(variant)}</option>
-                      ))}
-                    </Select>
-                  </div>
-                ) : null}
-                {usesModel && selectedPreset && selectedPreset.reasoning.length > 0 ? (
-                  <div className={styles.field}>
-                    <span className={styles.labelText}>General reasoning</span>
-                    <Select
-                      appearance="underline"
-                      className={styles.underlineField}
-                      aria-label="General reasoning"
-                      value={modelReasoningId}
-                      onChange={(_, data) => setModelReasoningId(data.value)}
-                    >
-                      {selectedPreset.reasoning.map((variant) => (
-                        <option key={variant.id} value={variant.id}>{variantOptionText(variant)}</option>
-                      ))}
-                    </Select>
-                  </div>
+                  <ModelGroup
+                    styles={styles}
+                    name="General"
+                    presets={presets}
+                    presetId={modelId}
+                    preset={selectedPreset}
+                    contextId={modelContextId}
+                    reasoningId={modelReasoningId}
+                    placeholder="Select a model preset"
+                    onPresetChange={setModelId}
+                    onContextChange={setModelContextId}
+                    onReasoningChange={setModelReasoningId}
+                  />
                 ) : null}
                 {usesRubberDuck ? (
-                  <div className={styles.field}>
-                    <span className={styles.labelText}>Alternative model</span>
-                    <Select
-                      appearance="underline"
-                      className={styles.underlineField}
-                      aria-label="Alternative model"
-                      value={rubberDuckModelId}
-                      disabled={presets.length === 0}
-                      onChange={(_, data) => setRubberDuckModelId(data.value)}
-                    >
-                      {rubberDuckModelId ? null : <option value="">Select an alternative model preset</option>}
-                      {presets.map((preset) => (
-                        <option key={preset.id} value={preset.id}>{preset.label}</option>
-                      ))}
-                    </Select>
-                  </div>
-                ) : null}
-                {usesRubberDuck && selectedRubberDuckPreset && selectedRubberDuckPreset.contexts.length > 0 ? (
-                  <div className={styles.field}>
-                    <span className={styles.labelText}>Alternative context</span>
-                    <Select
-                      appearance="underline"
-                      className={styles.underlineField}
-                      aria-label="Alternative context"
-                      value={rubberDuckContextId}
-                      onChange={(_, data) => setRubberDuckContextId(data.value)}
-                    >
-                      {selectedRubberDuckPreset.contexts.map((variant) => (
-                        <option key={variant.id} value={variant.id}>{variantOptionText(variant)}</option>
-                      ))}
-                    </Select>
-                  </div>
-                ) : null}
-                {usesRubberDuck && selectedRubberDuckPreset && selectedRubberDuckPreset.reasoning.length > 0 ? (
-                  <div className={styles.field}>
-                    <span className={styles.labelText}>Alternative reasoning</span>
-                    <Select
-                      appearance="underline"
-                      className={styles.underlineField}
-                      aria-label="Alternative reasoning"
-                      value={rubberDuckReasoningId}
-                      onChange={(_, data) => setRubberDuckReasoningId(data.value)}
-                    >
-                      {selectedRubberDuckPreset.reasoning.map((variant) => (
-                        <option key={variant.id} value={variant.id}>{variantOptionText(variant)}</option>
-                      ))}
-                    </Select>
-                  </div>
+                  <ModelGroup
+                    styles={styles}
+                    name="Alternative"
+                    presets={presets}
+                    presetId={rubberDuckModelId}
+                    preset={selectedRubberDuckPreset}
+                    contextId={rubberDuckContextId}
+                    reasoningId={rubberDuckReasoningId}
+                    placeholder="Select an alternative model preset"
+                    onPresetChange={setRubberDuckModelId}
+                    onContextChange={setRubberDuckContextId}
+                    onReasoningChange={setRubberDuckReasoningId}
+                  />
                 ) : null}
               </div>
             </section>
           ) : null}
-
           <section className={styles.section}>
             <span className={styles.eyebrow}>Inputs</span>
             {visibleVariables.length > 0 ? (
