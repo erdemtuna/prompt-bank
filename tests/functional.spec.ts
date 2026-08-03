@@ -76,7 +76,7 @@ test('both model selectors insert the chosen preset labels', async ({ page }) =>
 
   await page.getByLabel('General model').selectOption('opus-5');
   await page.getByLabel('Alternative model').selectOption('gpt-5-6-sol');
-  await expect(preview).toContainText('Use Opus 5 extra high reasoning as the primary reviewer and GPT-5.6 Sol extra high reasoning as an independent second reviewer.');
+  await expect(preview).toContainText('Use Opus 5 1M context extra high reasoning as the primary reviewer and GPT-5.6 Sol 1M context extra high reasoning as an independent second reviewer.');
 });
 
 test('context and reasoning selectors refine the composed model label', async ({ page }) => {

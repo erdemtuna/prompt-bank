@@ -1,6 +1,7 @@
 presets:
   - id: gpt-5-6-sol
     label: GPT-5.6 Sol
+    default_context: 1m
     contexts:
       - id: standard
         label: ""
@@ -16,6 +17,7 @@ presets:
         label: max reasoning
   - id: gpt-5-6-terra
     label: GPT-5.6 Terra
+    default_context: 1m
     contexts:
       - id: standard
         label: ""
@@ -31,6 +33,7 @@ presets:
         label: max reasoning
   - id: opus-5
     label: Opus 5
+    default_context: 1m
     contexts:
       - id: standard
         label: ""
@@ -46,6 +49,7 @@ presets:
         label: max reasoning
   - id: sonnet-5
     label: Sonnet 5
+    default_context: 1m
     contexts:
       - id: standard
         label: ""
