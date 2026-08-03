@@ -1,5 +1,61 @@
 presets:
   - id: gpt-5-6-sol
-    label: GPT-5.6 Sol extra high reasoning
-  - id: opus-4-8
-    label: Opus 4.8 extra high reasoning
+    label: GPT-5.6 Sol
+    contexts:
+      - id: standard
+        label: ""
+      - id: 1m
+        label: 1M context
+    default_reasoning: xhigh
+    reasoning:
+      - id: high
+        label: high reasoning
+      - id: xhigh
+        label: extra high reasoning
+      - id: max
+        label: max reasoning
+  - id: gpt-5-6-terra
+    label: GPT-5.6 Terra
+    contexts:
+      - id: standard
+        label: ""
+      - id: 1m
+        label: 1M context
+    default_reasoning: xhigh
+    reasoning:
+      - id: high
+        label: high reasoning
+      - id: xhigh
+        label: extra high reasoning
+      - id: max
+        label: max reasoning
+  - id: opus-5
+    label: Opus 5
+    contexts:
+      - id: standard
+        label: ""
+      - id: 1m
+        label: 1M context
+    default_reasoning: xhigh
+    reasoning:
+      - id: high
+        label: high reasoning
+      - id: xhigh
+        label: extra high reasoning
+      - id: max
+        label: max reasoning
+  - id: sonnet-5
+    label: Sonnet 5
+    contexts:
+      - id: standard
+        label: ""
+      - id: 1m
+        label: 1M context
+    default_reasoning: xhigh
+    reasoning:
+      - id: high
+        label: high reasoning
+      - id: xhigh
+        label: extra high reasoning
+      - id: max
+        label: max reasoning

@@ -55,10 +55,19 @@ export type PromptIdentity = {
   key?: string;
 };
 
+export type ModelPresetVariant = {
+  id: string;
+  label: string;
+};
+
 export type ModelPreset = {
   id: string;
   label: string;
   description?: string;
+  contexts: ModelPresetVariant[];
+  reasoning: ModelPresetVariant[];
+  defaultContextId?: string;
+  defaultReasoningId?: string;
 };
 
 const nonEmpty = z.string().trim().min(1);
@@ -84,11 +93,21 @@ const frontmatterSchema = z.object({
   modelPresetId: z.string().optional()
 }).passthrough();
 
+const modelPresetVariantSchema = z.object({
+  id: nonEmpty,
+  label: z.string().optional(),
+  name: z.string().optional()
+}).passthrough();
+
 const modelPresetSchema = z.object({
   id: nonEmpty,
   label: z.string().optional(),
   name: z.string().optional(),
-  description: z.string().optional()
+  description: z.string().optional(),
+  contexts: z.array(modelPresetVariantSchema).optional(),
+  reasoning: z.array(modelPresetVariantSchema).optional(),
+  default_context: z.string().optional(),
+  default_reasoning: z.string().optional()
 }).passthrough();
 
 const modelPresetDocumentSchema = z.union([
@@ -226,10 +245,16 @@ export function parseModelPresets(path: string, raw: string): { presets: ModelPr
       issues.push(presetIssue(path, `Model preset id "${id}" must be kebab-case using lowercase letters, numbers, and hyphens.`));
     }
     seen.set(id, (seen.get(id) ?? 0) + 1);
+    const contexts = normalizePresetVariants(path, id, 'context', preset.contexts, issues);
+    const reasoning = normalizePresetVariants(path, id, 'reasoning', preset.reasoning, issues);
     return {
       id,
       label: preset.label?.trim() || preset.name?.trim() || id,
-      description: preset.description
+      description: preset.description,
+      contexts,
+      reasoning,
+      defaultContextId: resolveDefaultVariantId(path, id, 'context', contexts, preset.default_context, issues),
+      defaultReasoningId: resolveDefaultVariantId(path, id, 'reasoning', reasoning, preset.default_reasoning, issues)
     } satisfies ModelPreset;
   });
 
@@ -240,6 +265,50 @@ export function parseModelPresets(path: string, raw: string): { presets: ModelPr
   }
 
   return { presets: issues.length > 0 ? [] : presets, issues };
+}
+
+function normalizePresetVariants(
+  path: string,
+  presetId: string,
+  kind: 'context' | 'reasoning',
+  raw: Array<{ id: string; label?: string; name?: string }> | undefined,
+  issues: ValidationIssue[]
+): ModelPresetVariant[] {
+  if (!raw) return [];
+  const seen = new Set<string>();
+  const variants: ModelPresetVariant[] = [];
+  for (const entry of raw) {
+    const id = entry.id.trim();
+    if (!slugPattern.test(id)) {
+      issues.push(presetIssue(path, `Model preset "${presetId}" has a ${kind} id "${id}" that must be kebab-case using lowercase letters, numbers, and hyphens.`));
+      continue;
+    }
+    if (seen.has(id)) {
+      issues.push(presetIssue(path, `Model preset "${presetId}" has a duplicate ${kind} id "${id}".`));
+      continue;
+    }
+    seen.add(id);
+    variants.push({ id, label: (entry.label ?? entry.name ?? '').trim() });
+  }
+  return variants;
+}
+
+function resolveDefaultVariantId(
+  path: string,
+  presetId: string,
+  kind: 'context' | 'reasoning',
+  variants: ModelPresetVariant[],
+  requested: string | undefined,
+  issues: ValidationIssue[]
+): string | undefined {
+  if (variants.length === 0) return undefined;
+  const wanted = requested?.trim();
+  if (!wanted) return variants[0].id;
+  if (!variants.some((variant) => variant.id === wanted)) {
+    issues.push(presetIssue(path, `Model preset "${presetId}" sets a default ${kind} "${wanted}" that is not one of its ${kind} entries.`));
+    return variants[0].id;
+  }
+  return wanted;
 }
 
 export function defaultModelIssues(prompts: ParsedPrompt[], presetIds: Set<string>): ValidationIssue[] {

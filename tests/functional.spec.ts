@@ -74,9 +74,22 @@ test('both model selectors insert the chosen preset labels', async ({ page }) =>
   await page.getByRole('button', { name: 'Review Code Changes' }).click();
   const preview = page.getByRole('region', { name: 'Composed prompt' });
 
-  await page.getByLabel('General model').selectOption('opus-4-8');
+  await page.getByLabel('General model').selectOption('opus-5');
   await page.getByLabel('Alternative model').selectOption('gpt-5-6-sol');
-  await expect(preview).toContainText('Use Opus 4.8 extra high reasoning as the primary reviewer and GPT-5.6 Sol extra high reasoning as an independent second reviewer.');
+  await expect(preview).toContainText('Use Opus 5 extra high reasoning as the primary reviewer and GPT-5.6 Sol extra high reasoning as an independent second reviewer.');
+});
+
+test('context and reasoning selectors refine the composed model label', async ({ page }) => {
+  await page.getByRole('button', { name: 'Review Code Changes' }).click();
+  const preview = page.getByRole('region', { name: 'Composed prompt' });
+
+  await page.getByLabel('General model').selectOption('gpt-5-6-terra');
+  await page.getByLabel('General context').selectOption('1m');
+  await page.getByLabel('General reasoning').selectOption('max');
+  await expect(preview).toContainText('Use GPT-5.6 Terra 1M context max reasoning as the primary reviewer');
+
+  await page.getByLabel('General context').selectOption('standard');
+  await expect(preview).toContainText('Use GPT-5.6 Terra max reasoning as the primary reviewer');
 });
 
 test('command prompts copy a shell ready command', async ({ page }) => {

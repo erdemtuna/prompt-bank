@@ -1,9 +1,19 @@
-import { extractPlaceholders, renderPromptTemplateOptions, type Prompt, type PromptOption, type PromptVariable, type ValidationIssue } from './schemas';
+import { extractPlaceholders, renderPromptTemplateOptions, type ModelPreset, type Prompt, type PromptOption, type PromptVariable, type ValidationIssue } from './schemas';
 
 export type VariableValues = Record<string, string>;
 export type OptionValues = Record<string, boolean>;
 export type BuiltInValues = Record<string, string | undefined>;
 const modelBuiltIns = ['model', 'rubberDuckModel'] as const;
+
+export function composeModelLabel(preset: ModelPreset | undefined, contextId: string, reasoningId: string): string | undefined {
+  if (!preset) return undefined;
+  const context = preset.contexts.find((variant) => variant.id === contextId);
+  const reasoning = preset.reasoning.find((variant) => variant.id === reasoningId);
+  return [preset.label, context?.label, reasoning?.label]
+    .map((part) => part?.trim())
+    .filter((part): part is string => Boolean(part))
+    .join(' ');
+}
 
 export type CompositionResult = {
   text: string;

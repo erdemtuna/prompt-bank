@@ -7,7 +7,7 @@ test('captures the desktop screenshot for the README', async ({ page }) => {
   await page.goto('/');
   await page.getByRole('button', { name: 'Review Code Changes' }).click();
   await page.getByLabel('changes', { exact: true }).fill('function total(items) {\n  return items.reduce((sum, item) => sum + item.price, 0);\n}');
-  await page.getByLabel('Alternative model').selectOption('opus-4-8');
+  await page.getByLabel('Alternative model').selectOption('opus-5');
   await page.evaluate(fontsReady);
   await page.waitForTimeout(500);
   await page.screenshot({ path: 'docs/screenshot.png' });

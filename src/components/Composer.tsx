@@ -1,8 +1,8 @@
 import { Input, Select, Text, Textarea, makeStyles } from '@fluentui/react-components';
 import { CheckmarkRegular, CheckmarkCircleRegular, ErrorCircleRegular, InfoRegular } from '@fluentui/react-icons';
 import { useEffect, useId, useMemo, useState } from 'react';
-import { composePrompt, initialOptionValues, initialVariableValues, promptUsesModelPlaceholder, promptUsesRubberDuckModelPlaceholder, type OptionValues, type VariableValues } from '../data/composer';
-import type { ModelPreset, Prompt, PromptVariable, ValidationIssue } from '../data/schemas';
+import { composeModelLabel, composePrompt, initialOptionValues, initialVariableValues, promptUsesModelPlaceholder, promptUsesRubberDuckModelPlaceholder, type OptionValues, type VariableValues } from '../data/composer';
+import type { ModelPreset, ModelPresetVariant, Prompt, PromptVariable, ValidationIssue } from '../data/schemas';
 import { formatCount, shouldUseTextarea } from './promptUi';
 
 const useStyles = makeStyles({
@@ -440,10 +440,25 @@ type Props = {
   issues: ValidationIssue[];
 };
 
+function variantOptionText(variant: ModelPresetVariant): string {
+  if (variant.label) return variant.label;
+  return variant.id.charAt(0).toUpperCase() + variant.id.slice(1);
+}
+
+function variantSelection(variants: ModelPresetVariant[] | undefined, defaultId: string | undefined, current: string): string {
+  if (!variants || variants.length === 0) return '';
+  if (variants.some((variant) => variant.id === current)) return current;
+  return defaultId ?? variants[0].id;
+}
+
 export function Composer({ prompt, presets, issues }: Props) {
   const styles = useStyles();
   const [modelId, setModelId] = useState<string>('');
   const [rubberDuckModelId, setRubberDuckModelId] = useState<string>('');
+  const [modelContextId, setModelContextId] = useState<string>('');
+  const [modelReasoningId, setModelReasoningId] = useState<string>('');
+  const [rubberDuckContextId, setRubberDuckContextId] = useState<string>('');
+  const [rubberDuckReasoningId, setRubberDuckReasoningId] = useState<string>('');
   const [values, setValues] = useState<VariableValues>({});
   const [optionValues, setOptionValues] = useState<OptionValues>({});
   const [feedback, setFeedback] = useState<{ kind: 'success' | 'error'; message: string } | undefined>();
@@ -454,7 +469,7 @@ export function Composer({ prompt, presets, issues }: Props) {
   // signature, so input is preserved), but changes when the file content itself
   // changes (for example re-picking the same folder after edits), so defaults
   // refresh. The presets signature ignores array identity for the same reason.
-  const presetSignature = presets.map((preset) => preset.id).join('|');
+  const presetSignature = presets.map((preset) => `${preset.id}:${preset.contexts.map((v) => v.id).join(',')}:${preset.reasoning.map((v) => v.id).join(',')}`).join('|');
   const promptSignature = prompt
     ? [prompt.key, prompt.template, JSON.stringify(prompt.variables), JSON.stringify(prompt.options), prompt.defaultModelId ?? ''].join('\u0000')
     : '';
@@ -477,9 +492,31 @@ export function Composer({ prompt, presets, issues }: Props) {
 
   const selectedPreset = useMemo(() => presets.find((preset) => preset.id === modelId), [modelId, presets]);
   const selectedRubberDuckPreset = useMemo(() => presets.find((preset) => preset.id === rubberDuckModelId), [rubberDuckModelId, presets]);
+
+  // Keep each model's context and reasoning selection valid for the preset that
+  // is actually selected. Presets may offer different variants, so a stale id is
+  // replaced by that preset's default rather than left dangling.
+  useEffect(() => {
+    setModelContextId((current) => variantSelection(selectedPreset?.contexts, selectedPreset?.defaultContextId, current));
+    setModelReasoningId((current) => variantSelection(selectedPreset?.reasoning, selectedPreset?.defaultReasoningId, current));
+  }, [selectedPreset]);
+
+  useEffect(() => {
+    setRubberDuckContextId((current) => variantSelection(selectedRubberDuckPreset?.contexts, selectedRubberDuckPreset?.defaultContextId, current));
+    setRubberDuckReasoningId((current) => variantSelection(selectedRubberDuckPreset?.reasoning, selectedRubberDuckPreset?.defaultReasoningId, current));
+  }, [selectedRubberDuckPreset]);
+
+  const modelLabel = useMemo(
+    () => composeModelLabel(selectedPreset, modelContextId, modelReasoningId),
+    [selectedPreset, modelContextId, modelReasoningId]
+  );
+  const rubberDuckLabel = useMemo(
+    () => composeModelLabel(selectedRubberDuckPreset, rubberDuckContextId, rubberDuckReasoningId),
+    [selectedRubberDuckPreset, rubberDuckContextId, rubberDuckReasoningId]
+  );
   const composition = useMemo(
-    () => prompt ? composePrompt(prompt, values, { model: selectedPreset?.label, rubberDuckModel: selectedRubberDuckPreset?.label }, { validationIssues: issues, optionValues }) : undefined,
-    [issues, optionValues, prompt, selectedPreset?.label, selectedRubberDuckPreset?.label, values]
+    () => prompt ? composePrompt(prompt, values, { model: modelLabel, rubberDuckModel: rubberDuckLabel }, { validationIssues: issues, optionValues }) : undefined,
+    [issues, optionValues, prompt, modelLabel, rubberDuckLabel, values]
   );
   const visibleVariables = useMemo(() => {
     if (!prompt) return [];
@@ -615,6 +652,38 @@ export function Composer({ prompt, presets, issues }: Props) {
                     </Select>
                   </div>
                 ) : null}
+                {usesModel && selectedPreset && selectedPreset.contexts.length > 0 ? (
+                  <div className={styles.field}>
+                    <span className={styles.labelText}>General context</span>
+                    <Select
+                      appearance="underline"
+                      className={styles.underlineField}
+                      aria-label="General context"
+                      value={modelContextId}
+                      onChange={(_, data) => setModelContextId(data.value)}
+                    >
+                      {selectedPreset.contexts.map((variant) => (
+                        <option key={variant.id} value={variant.id}>{variantOptionText(variant)}</option>
+                      ))}
+                    </Select>
+                  </div>
+                ) : null}
+                {usesModel && selectedPreset && selectedPreset.reasoning.length > 0 ? (
+                  <div className={styles.field}>
+                    <span className={styles.labelText}>General reasoning</span>
+                    <Select
+                      appearance="underline"
+                      className={styles.underlineField}
+                      aria-label="General reasoning"
+                      value={modelReasoningId}
+                      onChange={(_, data) => setModelReasoningId(data.value)}
+                    >
+                      {selectedPreset.reasoning.map((variant) => (
+                        <option key={variant.id} value={variant.id}>{variantOptionText(variant)}</option>
+                      ))}
+                    </Select>
+                  </div>
+                ) : null}
                 {usesRubberDuck ? (
                   <div className={styles.field}>
                     <span className={styles.labelText}>Alternative model</span>
@@ -629,6 +698,38 @@ export function Composer({ prompt, presets, issues }: Props) {
                       {rubberDuckModelId ? null : <option value="">Select an alternative model preset</option>}
                       {presets.map((preset) => (
                         <option key={preset.id} value={preset.id}>{preset.label}</option>
+                      ))}
+                    </Select>
+                  </div>
+                ) : null}
+                {usesRubberDuck && selectedRubberDuckPreset && selectedRubberDuckPreset.contexts.length > 0 ? (
+                  <div className={styles.field}>
+                    <span className={styles.labelText}>Alternative context</span>
+                    <Select
+                      appearance="underline"
+                      className={styles.underlineField}
+                      aria-label="Alternative context"
+                      value={rubberDuckContextId}
+                      onChange={(_, data) => setRubberDuckContextId(data.value)}
+                    >
+                      {selectedRubberDuckPreset.contexts.map((variant) => (
+                        <option key={variant.id} value={variant.id}>{variantOptionText(variant)}</option>
+                      ))}
+                    </Select>
+                  </div>
+                ) : null}
+                {usesRubberDuck && selectedRubberDuckPreset && selectedRubberDuckPreset.reasoning.length > 0 ? (
+                  <div className={styles.field}>
+                    <span className={styles.labelText}>Alternative reasoning</span>
+                    <Select
+                      appearance="underline"
+                      className={styles.underlineField}
+                      aria-label="Alternative reasoning"
+                      value={rubberDuckReasoningId}
+                      onChange={(_, data) => setRubberDuckReasoningId(data.value)}
+                    >
+                      {selectedRubberDuckPreset.reasoning.map((variant) => (
+                        <option key={variant.id} value={variant.id}>{variantOptionText(variant)}</option>
                       ))}
                     </Select>
                   </div>

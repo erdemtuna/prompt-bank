@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { composePrompt, initialOptionValues, initialVariableValues, promptUsesModelPlaceholder, promptUsesRubberDuckModelPlaceholder } from './composer';
+import { composeModelLabel, composePrompt, initialOptionValues, initialVariableValues, promptUsesModelPlaceholder, promptUsesRubberDuckModelPlaceholder } from './composer';
 import { builtinPresetsRaw, builtinPromptSources, loadAppData, loadAppDataFromSources, resolvePromptsForApp } from './loaders';
 import { parseModelPresets, parsePromptFile, validatePromptCollection, type Prompt, type PromptIdentity, type PromptOption } from './schemas';
 import { formatCount, shouldUseTextarea } from '../components/promptUi';
@@ -589,7 +589,7 @@ describe('prompt validation', () => {
   it('detects duplicate prompt ids and invalid model defaults', () => {
     const promptA = makePrompt('A', 'same', 'missing-model', 'a.md');
     const promptB = makePrompt('B', 'same', undefined, 'b.md');
-    const issues = validatePromptCollection([promptA, promptB], [{ id: 'gpt-5-5', label: 'GPT-5.5' }]);
+    const issues = validatePromptCollection([promptA, promptB], [{ id: 'gpt-5-5', label: 'GPT-5.5', contexts: [], reasoning: [] }]);
 
     expect(issues).toContainEqual(expect.objectContaining({ path: 'a.md', promptPaths: ['a.md', 'b.md'], message: 'Duplicate prompt id "same".' }));
     expect(issues).toContainEqual(expect.objectContaining({ path: 'b.md', promptPaths: ['a.md', 'b.md'], message: 'Duplicate prompt id "same".' }));
@@ -631,6 +631,69 @@ describe('model preset validation', () => {
     const result = parseModelPresets('model-presets.yaml', 'presets:\n  - id: one\n  - id: one\n');
 
     expect(result.issues).toContainEqual(expect.objectContaining({ scope: 'preset', path: 'model-presets.yaml', message: 'Duplicate model preset id "one".' }));
+  });
+
+  it('parses context and reasoning variants with defaults', () => {
+    const result = parseModelPresets(
+      'model-presets.yaml',
+      'presets:\n  - id: terra\n    label: GPT-5.6 Terra\n    contexts:\n      - id: standard\n        label: ""\n      - id: 1m\n        label: 1M context\n    default_reasoning: xhigh\n    reasoning:\n      - id: high\n        label: high reasoning\n      - id: xhigh\n        label: extra high reasoning\n'
+    );
+
+    expect(result.issues).toEqual([]);
+    expect(result.presets[0].contexts.map((variant) => variant.id)).toEqual(['standard', '1m']);
+    expect(result.presets[0].defaultContextId).toBe('standard');
+    expect(result.presets[0].defaultReasoningId).toBe('xhigh');
+  });
+
+  it('keeps presets without variants usable', () => {
+    const result = parseModelPresets('model-presets.yaml', 'presets:\n  - id: plain\n    label: Plain\n');
+
+    expect(result.issues).toEqual([]);
+    expect(result.presets[0].contexts).toEqual([]);
+    expect(result.presets[0].defaultReasoningId).toBeUndefined();
+  });
+
+  it('reports a default that is not one of the declared variants', () => {
+    const result = parseModelPresets(
+      'model-presets.yaml',
+      'presets:\n  - id: terra\n    default_reasoning: nope\n    reasoning:\n      - id: high\n        label: high reasoning\n'
+    );
+
+    expect(result.issues).toContainEqual(expect.objectContaining({ message: 'Model preset "terra" sets a default reasoning "nope" that is not one of its reasoning entries.' }));
+  });
+
+  it('rejects a variant id that is not kebab-case', () => {
+    const result = parseModelPresets(
+      'model-presets.yaml',
+      'presets:\n  - id: terra\n    reasoning:\n      - id: Extra High\n        label: extra high reasoning\n'
+    );
+
+    expect(result.issues.some((issue) => issue.message.includes('reasoning id "Extra High"'))).toBe(true);
+  });
+});
+
+describe('model label composition', () => {
+  const preset = {
+    id: 'terra',
+    label: 'GPT-5.6 Terra',
+    contexts: [{ id: 'standard', label: '' }, { id: '1m', label: '1M context' }],
+    reasoning: [{ id: 'xhigh', label: 'extra high reasoning' }]
+  };
+
+  it('joins label, context, and reasoning', () => {
+    expect(composeModelLabel(preset, '1m', 'xhigh')).toBe('GPT-5.6 Terra 1M context extra high reasoning');
+  });
+
+  it('omits an empty context label', () => {
+    expect(composeModelLabel(preset, 'standard', 'xhigh')).toBe('GPT-5.6 Terra extra high reasoning');
+  });
+
+  it('falls back to the bare label when selections are unknown', () => {
+    expect(composeModelLabel(preset, '', '')).toBe('GPT-5.6 Terra');
+  });
+
+  it('returns undefined without a preset', () => {
+    expect(composeModelLabel(undefined, '1m', 'xhigh')).toBeUndefined();
   });
 });
 

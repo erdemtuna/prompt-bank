@@ -125,13 +125,29 @@ Command snippets should be shell-ready after composition. Keep them explicit and
 
 Use `gpt-5-6-sol` by default. Choose a different preset only when the prompt clearly requires a different model profile.
 
-Model presets live in `model-presets.yaml` and are descriptive copy guidance only. They label the copied prompt text for the user; they are not routing, provider, or execution configuration. They should include:
+Model presets live in `model-presets.yaml` and are descriptive copy guidance only. They label the copied prompt text for the user; they are not routing, provider, or execution configuration.
+
+A preset may declare `contexts` and `reasoning`, each a list of variants with a kebab-case `id` and a `label`. When a preset declares them, the composer shows a context and a reasoning dropdown next to that model, and the copied text becomes the model label, the context label, and the reasoning label joined by spaces. A variant with an empty label contributes nothing, which keeps the common case short. Use `default_context` and `default_reasoning` to preselect a variant; without them the first entry wins.
 
 ```yaml
 presets:
-  - id: gpt-5-6-sol
-    label: GPT-5.6 Sol extra high
-    description: Best for complex planning, implementation, and review prompts.
+  - id: gpt-5-6-terra
+    label: GPT-5.6 Terra
+    contexts:
+      - id: standard
+        label: ""
+      - id: 1m
+        label: 1M context
+    default_reasoning: xhigh
+    reasoning:
+      - id: high
+        label: high reasoning
+      - id: xhigh
+        label: extra high reasoning
+      - id: max
+        label: max reasoning
 ```
+
+Selecting the 1M context and extra high reasoning above copies `GPT-5.6 Terra 1M context extra high reasoning`, while the standard context copies `GPT-5.6 Terra extra high reasoning`. Presets that declare neither list keep working as a plain label with no extra dropdowns.
 
 Do not add provider routing, API configuration, temperature, or execution metadata to model presets.

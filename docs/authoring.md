@@ -95,6 +95,8 @@ A conditional block tag that sits on its own line is treated as a control line a
 
 Two built in placeholders insert a descriptive model label chosen in the interface. Use `{{model}}` for the general model and `{{rubberDuckModel}}` for an alternative or reviewer model. Do not declare variables named `model` or `rubberDuckModel`. Set `model_default` to a preset id from `model-presets.yaml` to preselect one.
 
+When a preset declares `contexts` or `reasoning`, the interface shows a matching dropdown beside that model and folds the choice into the same placeholder, so a prompt written as `{{model}}` can copy as `GPT-5.6 Terra 1M context extra high reasoning` without any change to the template. See `schema.md` for the preset format.
+
 ```markdown
 ---
 id: plan-example
