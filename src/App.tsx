@@ -1,5 +1,7 @@
 import { FluentProvider, Text, makeStyles, webLightTheme, type Theme } from '@fluentui/react-components';
+import { ArrowSyncRegular } from '@fluentui/react-icons';
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { EmptyPrompts } from './components/EmptyPrompts';
 import { WorkspaceTabs } from './components/WorkspaceTabs';
 import { WorkspaceView } from './components/WorkspaceView';
 import { builtinPresetsRaw, builtinPromptSources, resolvePromptsForApp, type PromptSourceInput } from './data/loaders';
@@ -107,6 +109,29 @@ const useStyles = makeStyles({
     '@media (max-width: 560px)': { display: 'none' }
   },
   metaNum: { fontWeight: 700, color: 'var(--sw-ink)' },
+  mastheadActions: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '18px',
+    flexShrink: 0
+  },
+  refreshButton: {
+    appearance: 'none',
+    cursor: 'pointer',
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '8px',
+    padding: '5px 10px',
+    backgroundColor: 'transparent',
+    border: '1px solid var(--sw-rule-strong)',
+    fontFamily: 'var(--sw-mono)',
+    fontSize: '11px',
+    letterSpacing: '0.12em',
+    textTransform: 'uppercase',
+    color: 'var(--sw-ink)',
+    ':hover': { backgroundColor: 'var(--sw-fill)' },
+    ':disabled': { cursor: 'progress', color: 'var(--sw-faint)' }
+  },
   notice: {
     boxSizing: 'border-box',
     width: '100%',
@@ -167,6 +192,7 @@ export default function App() {
   const [activeTabId, setActiveTabId] = useState<string>('library');
   const [recents, setRecents] = useState<WorkspaceSummaryDto[]>([]);
   const [notice, setNotice] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
 
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState('all');
@@ -206,6 +232,20 @@ export default function App() {
 
   const activeTab = tabs.find((tab) => tab.id === activeTabId) ?? tabs[0];
 
+  // Ctrl/Cmd+K jumps to the index search from anywhere, including from inside a
+  // composer field, so filtering never requires reaching for the mouse.
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key.toLowerCase() !== 'k' || !(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey) return;
+      event.preventDefault();
+      const input = document.getElementById('pb-search') as HTMLInputElement | null;
+      input?.focus();
+      input?.select();
+    }
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
+
   useEffect(() => {
     if (!desktop) return;
     const title = activeTab.kind === 'library' ? 'Prompt Bank' : `Prompt Bank: ${activeTab.label}`;
@@ -240,7 +280,7 @@ export default function App() {
     const seq = loadSeqRef.current + 1;
     loadSeqRef.current = seq;
     setTabs((prev) => prev.map((tab) => (tab.id === id ? { ...tab, state: 'loading', loadSeq: seq, error: undefined } : tab)));
-    openWorkspace(id)
+    return openWorkspace(id)
       .then((result) => {
         setTabs((prev) =>
           prev.map((tab) =>
@@ -254,6 +294,22 @@ export default function App() {
         const message = toCommandError(error).message;
         setTabs((prev) => prev.map((tab) => (tab.id === id && tab.loadSeq === seq ? { ...tab, state: 'error', error: message } : tab)));
       });
+  }
+
+  // Prompts are files on disk, so an edit made outside the app has to be picked
+  // up without a restart. Built in prompts are bundled and cannot change, so a
+  // refresh re-reads the global set and the folder behind the active tab.
+  function refreshPrompts() {
+    if (!desktop || refreshing) return;
+    setRefreshing(true);
+    setNotice(null);
+    const work: Promise<unknown>[] = [
+      readGlobalPrompts()
+        .then((source) => setGlobalSource(source))
+        .catch((error) => setNotice(`Global prompts could not reload: ${toCommandError(error).message}`))
+    ];
+    if (activeTab.kind === 'folder') work.push(loadFolderInto(activeTab.id));
+    Promise.all(work).finally(() => setRefreshing(false));
   }
 
   function openRecent(id: string) {
@@ -320,8 +376,22 @@ export default function App() {
             <h1 className={styles.wordmark}>Prompt&nbsp;Bank</h1>
             <span className={styles.tagline}>File-backed prompt library — copy only</span>
           </div>
-          <span className={styles.mastheadMeta}>
-            <span className={styles.metaNum}>{promptCountLabel}</span> Prompts
+          <span className={styles.mastheadActions}>
+            {desktop ? (
+              <button
+                type="button"
+                className={styles.refreshButton}
+                onClick={refreshPrompts}
+                disabled={refreshing}
+                title="Re-read prompt files from disk"
+              >
+                <ArrowSyncRegular aria-hidden="true" />
+                {refreshing ? 'Refreshing' : 'Refresh'}
+              </button>
+            ) : null}
+            <span className={styles.mastheadMeta}>
+              <span className={styles.metaNum}>{promptCountLabel}</span> Prompts
+            </span>
           </span>
         </div>
         {desktop ? (
@@ -363,7 +433,7 @@ export default function App() {
         {folderPending ? (
           activeTab.state === 'loading' ? <Text>Loading prompts…</Text> : null
         ) : data.prompts.length === 0 ? (
-          <Text>No prompt Markdown files were found.</Text>
+          <EmptyPrompts scope={activeTab.kind === 'folder' ? 'folder' : 'library'} folderLabel={activeTab.label} />
         ) : (
           <WorkspaceView
             data={data}

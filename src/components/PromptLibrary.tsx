@@ -1,6 +1,6 @@
 import { Input, Text, makeStyles } from '@fluentui/react-components';
 import type { Prompt } from '../data/schemas';
-import { formatCount } from './promptUi';
+import { formatCount, shortcutModifier } from './promptUi';
 
 const useStyles = makeStyles({
   panel: {
@@ -230,9 +230,10 @@ export function PromptLibrary({
       <div className={styles.controls}>
         <Input
           appearance="underline"
+          id="pb-search"
           className={styles.search}
           aria-label="Search prompts"
-          placeholder="Search"
+          placeholder={`Search  ·  ${shortcutModifier}+K`}
           value={search}
           onChange={(_, data) => onSearchChange(data.value)}
         />

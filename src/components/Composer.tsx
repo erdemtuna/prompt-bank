@@ -1,9 +1,9 @@
 import { Input, Select, Text, Textarea, makeStyles } from '@fluentui/react-components';
 import { CheckmarkRegular, CheckmarkCircleRegular, ErrorCircleRegular, InfoRegular } from '@fluentui/react-icons';
-import { useEffect, useId, useMemo, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useState } from 'react';
 import { composeModelLabel, composePrompt, initialOptionValues, initialVariableValues, promptUsesModelPlaceholder, promptUsesRubberDuckModelPlaceholder, type OptionValues, type VariableValues } from '../data/composer';
 import type { ModelPreset, ModelPresetVariant, Prompt, PromptVariable, ValidationIssue } from '../data/schemas';
-import { formatCount, shouldUseTextarea } from './promptUi';
+import { formatCount, shortcutModifier, shouldUseTextarea } from './promptUi';
 
 const useStyles = makeStyles({
   panel: {
@@ -148,6 +148,15 @@ const useStyles = makeStyles({
     fontSize: '11px',
     letterSpacing: '0.06em',
     color: 'var(--sw-muted)'
+  },
+  shortcutHint: {
+    fontFamily: 'var(--sw-mono)',
+    fontSize: '11px',
+    letterSpacing: '0.08em',
+    textTransform: 'uppercase',
+    color: 'var(--sw-muted)',
+    whiteSpace: 'nowrap',
+    '@media (max-width: 900px)': { display: 'none' }
   },
   previewFrame: {
     display: 'grid',
@@ -644,23 +653,11 @@ export function Composer({ prompt, presets, issues }: Props) {
     return prompt.variables.filter((variable) => activeVariableNames.has(variable.name));
   }, [composition, prompt]);
 
-  if (!prompt) {
-    return <Text className={styles.emptyInputs}>Select a prompt to compose it.</Text>;
-  }
+  const isCommand = prompt?.kind === 'command';
 
-  const copyDisabled = !composition?.canCopy;
-  const previewText = composition?.text ?? '';
-  const charCount = previewText.length;
-  const isCommand = prompt.kind === 'command';
-  const copyLabel = isCommand ? 'Copy command' : 'Copy composed prompt';
-  const previewLabel = isCommand ? 'Composed command' : 'Composed prompt';
-  const rawTemplateLabel = isCommand ? 'Raw command template' : 'Raw template';
-
-  const metaItems = [prompt.category];
-  if (isCommand) metaItems.push('command');
-  metaItems.push(visibleVariables.length > 0 ? formatCount(visibleVariables.length, 'input') : 'no inputs');
-
-  async function copyComposedPrompt() {
+  // Copying is also bound to Ctrl/Cmd+Enter, so the handler lives in a callback
+  // above the early return where the keyboard effect can reach it.
+  const copyComposedPrompt = useCallback(async () => {
     if (!composition?.canCopy) {
       setFeedback({ kind: 'error', message: composition?.disabledReasons[0] ?? `Copy is disabled for this ${isCommand ? 'command' : 'prompt'}.` });
       return;
@@ -671,7 +668,35 @@ export function Composer({ prompt, presets, issues }: Props) {
     } catch {
       setFeedback({ kind: 'error', message: `Could not copy. Select and copy the text from the ${isCommand ? 'command' : 'prompt'} preview.` });
     }
+  }, [composition, isCommand]);
+
+  // Ctrl/Cmd+Enter copies from anywhere in the composer, including from inside a
+  // variable field, so filling the last input and copying needs no mouse.
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key !== 'Enter' || !(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey) return;
+      event.preventDefault();
+      void copyComposedPrompt();
+    }
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [copyComposedPrompt]);
+
+  if (!prompt) {
+    return <Text className={styles.emptyInputs}>Select a prompt to compose it.</Text>;
   }
+
+  const copyDisabled = !composition?.canCopy;
+  const previewText = composition?.text ?? '';
+  const charCount = previewText.length;
+  const copyLabel = isCommand ? 'Copy command' : 'Copy composed prompt';
+  const previewLabel = isCommand ? 'Composed command' : 'Composed prompt';
+  const rawTemplateLabel = isCommand ? 'Raw command template' : 'Raw template';
+
+  const metaItems = [prompt.category];
+  if (isCommand) metaItems.push('command');
+  metaItems.push(visibleVariables.length > 0 ? formatCount(visibleVariables.length, 'input') : 'no inputs');
+
 
   const usesModel = composition?.usesModelPlaceholder;
   const usesRubberDuck = composition?.usesRubberDuckModelPlaceholder;
@@ -705,7 +730,9 @@ export function Composer({ prompt, presets, issues }: Props) {
                 {feedback.kind === 'success' ? <CheckmarkCircleRegular /> : <ErrorCircleRegular />}
                 {feedback.message}
               </span>
-            ) : null}
+            ) : copyDisabled ? null : (
+              <span className={styles.shortcutHint}>{shortcutModifier} + Enter</span>
+            )}
           </div>
           {composition && composition.disabledReasons.length > 0 ? (
             <Text className={styles.disabledReason}>Copy disabled — {composition.disabledReasons.join(' ')}</Text>
