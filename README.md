@@ -1,10 +1,14 @@
 # Prompt Bank
 
-Validated prompts, composed locally, copied anywhere.
+Reusable prompts as local Markdown, composed and ready to paste.
 
-Prompt Bank is a local, copy only prompt library. It runs as a desktop app that keeps your prompts on your machine: store them as Markdown, fill their variables and optional sections, preview the composed text, then copy it into any tool. There is no account, no backend, and no model call. Prompt Bank does not send your prompt content anywhere; it leaves the app only when you copy it to your clipboard.
+A prompt you rely on tends to exist in a dozen slightly different forms: copies scattered across chats, notes, and gists, each drifting a little from the last. Somewhere along the way a constraint gets dropped, or you paste a stale variant and do not notice until the answer comes back wrong.
+
+Prompt Bank keeps the canonical version in a Markdown file and declares the parts that change as variables and optional sections. The app turns that file into a form: fill the inputs, toggle the sections you want, watch the composed text update, then paste it into whichever AI tool you already use.
 
 ![The Prompt Bank interface](docs/screenshot.png)
+
+Because prompts are plain files, they stay yours. You can diff them, grep them, and commit them alongside the project they belong to, with no account and nothing to export if you walk away. Keep a personal set in `~/.prompt-bank/`, and a project specific set in any folder you open. Prompt Bank composes the text and hands it to your clipboard; it does not call a model or send your prompts anywhere.
 
 ## Download
 
@@ -22,11 +26,11 @@ Prefer to build it yourself? See [Building the desktop app](#building-the-deskto
 
 ## Why Prompt Bank
 
-- Local and private. Your prompts stay on your machine. Built in prompts ship with the app; your own global and folder prompts are read at runtime and are never bundled or sent anywhere.
-- Copy only. Prompt Bank renders and copies text. It never executes a prompt, calls a model, or runs a workflow.
-- Structured and validated. Prompts are Markdown files with a small, checked schema, so a broken prompt is caught before you use it.
-- Composable. Declare variables, optional focus toggles, and model preset labels, and the composed text updates live.
-- Your prompts, together. A personal global set and any folder you open appear alongside the built in prompts, each with a source label.
+- Composable. Declare variables, optional focus toggles, and model preset labels, and the composed text updates live as you fill them in.
+- Structured. Prompts are Markdown with a small, checked schema, so a malformed prompt is caught before you rely on it.
+- Yours to keep. Plain files you can diff, grep, and commit next to the code they belong to. No account, no proprietary format, nothing to migrate later.
+- Together in one place. A personal global set and any project folder you open appear alongside the built in prompts, each with a source label.
+- Local. Everything happens on your machine. Prompt Bank renders text and copies it; it never executes a prompt, calls a model, or runs a workflow.
 
 ## The built in prompts
 
@@ -127,7 +131,7 @@ The example prompts under `prompts/` are the built in set and a starting point. 
 
 ## How it works
 
-Prompt Bank is a React and Vite interface inside a Tauri desktop window. The built in prompts are bundled with the app. Your global and folder prompts are read at runtime by a small Rust core, over in process messages, never over a network, and are never written into the app bundle. The folder picker and every private file read happen in Rust; the reader only reads Markdown directly inside a `.prompt-bank` directory, rejects symlinks, and caps how much it will read. The composer substitutes your inputs into the template, applies the enabled focus blocks, and copies the result to your clipboard. There is no backend and no telemetry; your prompt content leaves the app only through the clipboard copy that you trigger.
+Prompt Bank is a React and Vite interface inside a Tauri desktop window. The built in prompts are bundled with the app. Your global and folder prompts are read at runtime by a small Rust core, over in process messages rather than a network, and are not written into the app bundle. The folder picker and every private file read happen in Rust; the reader only reads Markdown directly inside a `.prompt-bank` directory, rejects symlinks, and caps how much it will read. The composer substitutes your inputs into the template, applies the enabled focus blocks, and copies the result to your clipboard. There is no backend and no telemetry, so your prompt content leaves the app only through the clipboard copy that you trigger.
 
 ## Building the desktop app
 

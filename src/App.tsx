@@ -374,7 +374,7 @@ export default function App() {
         <div className={styles.mastheadInner}>
           <div className={styles.brand}>
             <h1 className={styles.wordmark}>Prompt&nbsp;Bank</h1>
-            <span className={styles.tagline}>File-backed prompt library — copy only</span>
+            <span className={styles.tagline}>Compose reusable prompts from Markdown</span>
           </div>
           <span className={styles.mastheadActions}>
             {desktop ? (

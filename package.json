@@ -3,7 +3,7 @@
   "version": "0.2.0",
   "private": true,
   "type": "module",
-  "description": "A local, file based, copy only prompt library with a small React interface.",
+  "description": "Reusable prompts as local Markdown, composed in a small React interface and ready to paste.",
   "author": "Erdem Tuna",
   "license": "MIT",
   "homepage": "https://github.com/erdemtuna/prompt-bank#readme",

@@ -46,12 +46,12 @@ const html = `<!doctype html>
     <div class="left">
       <div class="wordmark">Prompt<br />Bank</div>
       <div class="rule"></div>
-      <div class="tagline">Validated prompts,<br />composed locally,<br />copied anywhere.</div>
-      <div class="sub">A local, copy only prompt library. Markdown files on your machine, variables and focus toggles filled in, previewed, then copied into any tool.</div>
+      <div class="tagline">Reusable prompts,<br />composed locally,<br />pasted anywhere.</div>
+      <div class="sub">Keep your prompts as local Markdown. Declare the parts that change as variables and optional sections, fill them in, then paste the composed text into whichever AI tool you use.</div>
       <div class="badges">
-        <span class="badge">No backend</span>
-        <span class="badge">No telemetry</span>
-        <span class="badge">No model calls</span>
+        <span class="badge">Variables</span>
+        <span class="badge">Focus toggles</span>
+        <span class="badge">Local files</span>
         <span class="badge">MIT</span>
       </div>
     </div>

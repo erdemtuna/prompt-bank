@@ -142,9 +142,13 @@ export function EmptyPrompts({ scope, folderLabel }: Props) {
         {isFolder ? `${folderLabel ?? 'This folder'} has no prompts yet` : 'Nothing to compose yet'}
       </h2>
       <p className={styles.body}>
+        A prompt is a Markdown file. Declare the parts that change as variables and optional sections, and Prompt Bank
+        turns it into a form you fill in and paste.
+      </p>
+      <p className={styles.body}>
         {isFolder
-          ? 'Prompt Bank reads Markdown files from a .prompt-bank directory inside the folder you opened. Create one, drop a prompt in it, and press Refresh.'
-          : 'Prompt Bank reads Markdown files from disk. Add one in either place below, then press Refresh.'}
+          ? 'Prompt Bank reads those files from a .prompt-bank directory inside the folder you opened. Create one, drop a prompt in it, and press Refresh.'
+          : 'Prompt Bank reads those files from disk. Add one in either place below, then press Refresh.'}
       </p>
 
       <ul className={styles.pathList}>

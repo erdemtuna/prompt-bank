@@ -40,7 +40,13 @@ jobs:
               repo: context.repo.repo,
               tag_name: process.env.RELEASE_TAG,
               name: `Prompt Bank ${process.env.RELEASE_VERSION}`,
-              body: 'Unsigned builds. Download the installer for your operating system below. macOS Gatekeeper and Windows SmartScreen may warn on first open until code signing is added.',
+              body: [
+                'Prompt Bank keeps your reusable prompts as local Markdown files with declared variables and optional sections. Fill them in, preview the composed text, and paste it into whichever AI tool you use.',
+                '',
+                'Download the installer for your operating system below.',
+                '',
+                'These builds are unsigned, so macOS Gatekeeper and Windows SmartScreen may warn on first open until code signing is added.',
+              ].join('\n'),
               draft: true,
               prerelease: false,
             });
