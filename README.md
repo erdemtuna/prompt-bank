@@ -6,6 +6,20 @@ Prompt Bank is a local, copy only prompt library. It runs as a desktop app that 
 
 ![The Prompt Bank interface](docs/screenshot.png)
 
+## Download
+
+Grab an installer from the [latest release](https://github.com/erdemtuna/prompt-bank/releases/latest). No toolchain needed.
+
+| Platform | File |
+| --- | --- |
+| Windows | `.exe` (NSIS installer) or `.msi` |
+| macOS | `.dmg`, built for both Apple Silicon and Intel |
+| Linux | `.AppImage` or `.deb` |
+
+The installers are not code signed yet, so the first launch shows a warning you have to click through: on Windows, SmartScreen's "More info" then "Run anyway"; on macOS, right click the app and choose Open, or allow it under System Settings, Privacy and Security. Signing is a later step.
+
+Prefer to build it yourself? See [Building the desktop app](#building-the-desktop-app).
+
 ## Why Prompt Bank
 
 - Local and private. Your prompts stay on your machine. Built in prompts ship with the app; your own global and folder prompts are read at runtime and are never bundled or sent anywhere.
@@ -13,6 +27,27 @@ Prompt Bank is a local, copy only prompt library. It runs as a desktop app that 
 - Structured and validated. Prompts are Markdown files with a small, checked schema, so a broken prompt is caught before you use it.
 - Composable. Declare variables, optional focus toggles, and model preset labels, and the composed text updates live.
 - Your prompts, together. A personal global set and any folder you open appear alongside the built in prompts, each with a source label.
+
+## The built in prompts
+
+Twelve prompts ship with the app. They are meant to be useful on their own and to show what the format can do, so most of them address an agent that already has your repository rather than asking you to paste code into a box.
+
+| Prompt | Category | What it is for |
+| --- | --- | --- |
+| Review a Pull Request | review | Multi-perspective review returning findings with evidence, severity, and a fix |
+| Review Working Tree Changes | review | Check your own uncommitted work before it becomes a commit |
+| Implementation Plan | planning | Turn an agreed goal into ordered waves with review gates |
+| Investigate a Topic | exploration | Explore an area or a question before deciding what to build |
+| Find the Root Cause | debugging | Trace a bug to its actual cause, with a regression test |
+| Explain a Codebase Area | code | Understand unfamiliar code well enough to change it safely |
+| Refactor Code | code | Restructure toward an outcome while behavior stays identical |
+| Compare Approaches | analysis | Weigh options against real criteria and commit to one |
+| Rewrite for Clarity | writing | Improve writing without replacing the author's voice |
+| Summarize a Source | writing | Summarize for a reader who has to act on it |
+| New Worktree | cli | A command that sets up a git worktree for parallel work |
+| Summarize Branch Diff | cli | A command that prints what this branch changed |
+
+Keyboard: <kbd>Ctrl</kbd>/<kbd>Cmd</kbd>+<kbd>K</kbd> jumps to search, <kbd>Ctrl</kbd>/<kbd>Cmd</kbd>+<kbd>Enter</kbd> copies the composed prompt. Refresh re-reads your prompt files after you edit them on disk.
 
 ## Prompt sources
 
@@ -30,6 +65,8 @@ Global and folder prompts are read at runtime, only on your machine, and are nev
 - For the desktop app: the Rust toolchain (via rustup) and your platform's webview libraries. See Building the desktop app.
 
 ## Quick start
+
+You only need this section if you want to run from source. To just use the app, see [Download](#download).
 
 Install dependencies:
 
@@ -109,7 +146,7 @@ npm run desktop:build
 
 This produces the native bundles for whichever operating system you build on:
 
-- Windows: `Prompt Bank_0.1.3_x64-setup.exe` (NSIS) and an `.msi`, under `src-tauri\target\release\bundle\`. WebView2 is preinstalled on Windows 11.
+- Windows: `Prompt Bank_0.2.0_x64-setup.exe` (NSIS) and an `.msi`, under `src-tauri\target\release\bundle\`. WebView2 is preinstalled on Windows 11.
 - macOS: `Prompt Bank.app` and a `.dmg`, under `src-tauri/target/release/bundle/`.
 - Linux: an `.AppImage` and a `.deb`, under `src-tauri/target/release/bundle/`.
 
@@ -127,14 +164,14 @@ The pure Rust core is tested in CI with `cargo test -p prompt-bank-core`. A nati
 
 Installers for all three desktop operating systems are built automatically by the `Release` GitHub Actions workflow, which runs `tauri-apps/tauri-action` on macOS, Windows, and Linux runners.
 
-- To cut a release, push a version tag: `git tag v0.1.3 && git push origin v0.1.3`. The workflow creates one release, has every platform job upload its installer to that same release, and then publishes it as the latest release only after all builds succeed. macOS is built for both Apple Silicon and Intel.
+- To cut a release, push a version tag that matches the version in `package.json` and `src-tauri/tauri.conf.json`, for example `git tag v0.3.0 && git push origin v0.3.0`. The workflow creates one release, has every platform job upload its installer to that same release, and then publishes it as the latest release only after all builds succeed. macOS is built for both Apple Silicon and Intel.
 - To produce installers without a release, run the workflow manually from the Actions tab (`workflow_dispatch`). The bundles are uploaded as downloadable workflow artifacts.
 
 The produced bundles are the Windows `.exe` (NSIS) and `.msi`, the macOS `.app` and `.dmg`, and the Linux `.AppImage` and `.deb`. They are unsigned for now, so macOS Gatekeeper and Windows SmartScreen may warn on first open; signing is a later step.
 
 ## Accessibility
 
-The interface is keyboard reachable, labels its controls, wires validation messages to their fields, and meets common contrast expectations. The local `npm run e2e` checks include an automated accessibility pass over both the built in library and the desktop workspace views.
+The interface is keyboard reachable, labels its controls, wires validation messages to their fields, and meets common contrast expectations. <kbd>Ctrl</kbd>/<kbd>Cmd</kbd>+<kbd>K</kbd> focuses the index search and <kbd>Ctrl</kbd>/<kbd>Cmd</kbd>+<kbd>Enter</kbd> copies the composed prompt, both from anywhere in the window. The local `npm run e2e` checks include an automated accessibility pass over both the built in library and the desktop workspace views.
 
 ## Project layout
 
@@ -147,6 +184,7 @@ The interface is keyboard reachable, labels its controls, wires validation messa
 | `src/` | The React and Vite application. |
 | `src-tauri/` | The Tauri desktop shell and the pure Rust core. |
 | `scripts/validate.ts` | The prompt and preset validator. |
+| `scripts/generate-social-preview.mjs` | Renders `docs/social-preview.png`, the GitHub link card. |
 | `tests/` | The local Playwright and Axe suite. |
 
 ## Contributing

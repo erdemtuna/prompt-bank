@@ -28,6 +28,7 @@
     "build": "tsc --noEmit && vite build",
     "test": "vitest run",
     "validate": "tsx scripts/validate.ts",
+    "social-preview": "node scripts/generate-social-preview.mjs",
     "guard:private": "tsx scripts/check-private-paths.ts",
     "e2e": "playwright test",
     "check": "npm run validate && npm run guard:private && npm test && npm run build",
