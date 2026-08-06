@@ -77,14 +77,21 @@ const tempPath = fileURLToPath(new URL('docs/.social-preview.html', root));
 const outputPath = fileURLToPath(new URL('docs/social-preview.png', root));
 
 writeFileSync(tempPath, html);
-const browser = await chromium.launch();
+let browser;
 try {
+  browser = await chromium.launch();
   const page = await browser.newPage({ viewport: { width: 1280, height: 640 }, deviceScaleFactor: 1 });
   await page.goto(`file://${tempPath.replace(/\\/g, '/')}`);
   await page.evaluate(() => document.fonts.ready);
   await page.screenshot({ path: outputPath });
 } finally {
-  await browser.close();
-  unlinkSync(tempPath);
+  // Chromium may fail to launch when browsers are not installed, so the scratch
+  // file has to be cleaned up even though it was written before that point.
+  await browser?.close();
+  try {
+    unlinkSync(tempPath);
+  } catch {
+    // already gone
+  }
 }
 console.log(`Wrote docs/social-preview.png (1280x640)`);

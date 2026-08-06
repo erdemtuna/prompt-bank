@@ -68,18 +68,27 @@ test('Ctrl+Enter reports why copying is blocked instead of copying nothing', asy
   await page.goto('/');
   await page.getByRole('button', { name: 'Refactor Code' }).click();
 
+  // The always-on "Copy disabled — ..." line already names the missing
+  // variable, so the reason alone proves nothing. The shortcut has to raise a
+  // second, separate copy of it in the feedback slot. Counting both occurrences
+  // keeps this test failing if the key handler stops firing.
+  const reason = page.getByText('Missing required variable "target".');
+  await expect(reason).toHaveCount(1);
+
   await page.getByLabel('target', { exact: true }).press('Control+Enter');
 
+  await expect(reason).toHaveCount(2);
   await expect(page.getByText('Prompt copied.')).toHaveCount(0);
-  await expect(page.getByText(/required/i).first()).toBeVisible();
 });
 
 test('the shortcut hints are visible so the shortcuts are discoverable', async ({ page }) => {
   await page.goto('/');
   await expect(page.getByRole('button', { name: 'Review a Pull Request' })).toBeVisible();
 
-  await expect(page.getByLabel('Search prompts')).toHaveAttribute('placeholder', /Ctrl\+K/);
-  await expect(page.getByText(/Ctrl \+ Enter/)).toBeVisible();
+  // The hint follows the host platform, so the expectation has to as well or
+  // this fails for every contributor on macOS.
+  await expect(page.getByLabel('Search prompts')).toHaveAttribute('placeholder', /(Ctrl|Cmd)\+K/);
+  await expect(page.getByText(/(Ctrl|Cmd) \+ Enter/)).toBeVisible();
 });
 
 test('Refresh re-reads prompt files that changed on disk', async ({ page }) => {
