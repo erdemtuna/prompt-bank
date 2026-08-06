@@ -150,7 +150,7 @@ npm run desktop:build
 
 This produces the native bundles for whichever operating system you build on:
 
-- Windows: `Prompt Bank_0.2.0_x64-setup.exe` (NSIS) and an `.msi`, under `src-tauri\target\release\bundle\`. WebView2 is preinstalled on Windows 11.
+- Windows: `Prompt Bank_<version>_x64-setup.exe` (NSIS) and an `.msi`, under `src-tauri\target\release\bundle\`. WebView2 is preinstalled on Windows 11.
 - macOS: `Prompt Bank.app` and a `.dmg`, under `src-tauri/target/release/bundle/`.
 - Linux: an `.AppImage` and a `.deb`, under `src-tauri/target/release/bundle/`.
 
