@@ -724,7 +724,7 @@ describe('app data loading', () => {
       'presets: []'
     );
 
-    expect(data.prompts.map((prompt) => prompt.id)).toEqual(['writing', 'review-a', 'review-b', 'docs']);
+    expect(data.prompts.map((prompt) => prompt.id)).toEqual(['review-a', 'review-b', 'writing', 'docs']);
   });
 });
 
@@ -837,12 +837,17 @@ describe('layered prompt sources', () => {
     const ids = loadAppData().prompts.map((prompt) => prompt.id).sort();
     expect(ids).toEqual([
       'compare-approaches',
-      'explain-code',
-      'inspect-git-status',
-      'plan-a-task',
+      'explain-a-codebase-area',
+      'find-the-root-cause',
+      'implementation-plan',
+      'investigate-a-topic',
+      'new-worktree',
       'refactor-code',
-      'review-code-changes',
-      'summarize-text'
+      'review-a-pull-request',
+      'review-working-tree-changes',
+      'rewrite-for-clarity',
+      'summarize-a-source',
+      'summarize-branch-diff'
     ]);
   });
 

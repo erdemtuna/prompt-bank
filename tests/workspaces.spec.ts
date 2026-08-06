@@ -210,15 +210,15 @@ test('a delayed global load preserves in-progress composer input', async ({ page
   });
 
   await page.goto('/');
-  await page.getByRole('button', { name: 'Summarize Text' }).click();
+  await page.getByRole('button', { name: 'Rewrite for Clarity' }).click();
   const sentinel = 'A distinctive sentinel sentence.';
-  await page.getByLabel('sourceText', { exact: true }).fill(sentinel);
+  await page.getByLabel('draft', { exact: true }).fill(sentinel);
 
   // Global lands after the delay and recomputes the data.
   await expect(page.getByRole('button', { name: /Global Tip, Global/ })).toBeVisible({ timeout: 6000 });
 
   // The composer input must survive the recompute, not be reset.
-  await expect(page.getByLabel('sourceText', { exact: true })).toHaveValue(sentinel);
+  await expect(page.getByLabel('draft', { exact: true })).toHaveValue(sentinel);
 });
 
 test('a picked folder stays ready even if a prior in-flight load for it rejects', async ({ page }) => {
