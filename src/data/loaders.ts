@@ -7,7 +7,7 @@ const promptModules = import.meta.glob('../../prompts/**/*.md', {
   eager: true
 }) as Record<string, string>;
 
-const categoryOrder = ['writing', 'code', 'review', 'planning', 'analysis', 'cli'];
+const categoryOrder = ['review', 'planning', 'exploration', 'debugging', 'code', 'analysis', 'writing', 'cli'];
 
 export const sourceLabels: Record<PromptSource, string> = {
   builtin: 'Built in',
