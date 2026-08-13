@@ -1,4 +1,4 @@
-import { Input, Select, Text, Textarea, makeStyles } from '@fluentui/react-components';
+import { Input, Select, Slider, Text, Textarea, makeStyles } from '@fluentui/react-components';
 import { CheckmarkRegular, CheckmarkCircleRegular, ErrorCircleRegular, InfoRegular } from '@fluentui/react-icons';
 import { useCallback, useEffect, useId, useMemo, useState } from 'react';
 import { composeModelLabel, composePrompt, initialOptionValues, initialVariableValues, promptUsesModelPlaceholder, promptUsesRubberDuckModelPlaceholder, type OptionValues, type VariableValues } from '../data/composer';
@@ -391,6 +391,18 @@ const useStyles = makeStyles({
       color: 'var(--sw-ink)'
     }
   },
+  sliderControl: {
+    display: 'grid',
+    gap: '6px'
+  },
+  slider: {
+    width: '100%'
+  },
+  sliderValue: {
+    fontFamily: 'var(--sw-sans)',
+    fontSize: '14px',
+    color: 'var(--sw-ink)'
+  },
   emptyInputs: {
     fontFamily: 'var(--sw-mono)',
     fontSize: '12px',
@@ -494,7 +506,7 @@ function variantSelection(variants: ModelPresetVariant[] | undefined, defaultId:
 }
 
 type ModelGroupProps = {
-  styles: Record<string, string>;
+  styles: ComposerStyles;
   name: 'General' | 'Alternative';
   presets: ModelPreset[];
   presetId: string;
@@ -560,17 +572,16 @@ function ModelGroup({
           {reasoning.length > 0 ? (
             <div className={styles.variantField}>
               <span className={styles.variantLabel}>Reasoning</span>
-              <Select
-                appearance="underline"
-                className={styles.underlineField}
-                aria-label={`${name} reasoning`}
+              <DiscreteSlider
+                label={`${name} reasoning`}
                 value={reasoningId}
-                onChange={(_, data) => onReasoningChange(data.value)}
-              >
-                {reasoning.map((variant) => (
-                  <option key={variant.id} value={variant.id}>{variantOptionText(variant, 'reasoning')}</option>
-                ))}
-              </Select>
+                choices={reasoning.map((variant) => ({
+                  id: variant.id,
+                  label: variantOptionText(variant, 'reasoning')
+                }))}
+                styles={styles}
+                onChange={onReasoningChange}
+              />
             </div>
           ) : null}
         </div>
@@ -847,6 +858,7 @@ type ComposerStyles = ReturnType<typeof useStyles>;
 
 function Field({ variable, value, invalid, styles, onChange }: { variable: PromptVariable; value: string; invalid: boolean; styles: ComposerStyles; onChange: (value: string) => void }) {
   const errorId = useId();
+  const choices = variable.choices ?? [];
   return (
     <div className={styles.field}>
       <span className={styles.fieldLabel}>
@@ -854,7 +866,32 @@ function Field({ variable, value, invalid, styles, onChange }: { variable: Promp
         {variable.required ? <span className={styles.req} aria-hidden="true">*</span> : null}
         {variable.description ? <InfoTooltip text={variable.description} styles={styles} /> : null}
       </span>
-      {shouldUseTextarea(variable) ? (
+      {variable.control === 'select' ? (
+        <Select
+          appearance="underline"
+          className={styles.underlineField}
+          value={value}
+          aria-label={variable.label}
+          aria-required={variable.required}
+          aria-invalid={invalid || undefined}
+          aria-describedby={invalid ? errorId : undefined}
+          onChange={(_, data) => onChange(data.value)}
+        >
+          {choices.map((choice) => (
+            <option key={choice.id} value={choice.id}>{choice.label}</option>
+          ))}
+        </Select>
+      ) : variable.control === 'slider' ? (
+        <DiscreteSlider
+          label={variable.label}
+          value={value}
+          choices={choices}
+          invalid={invalid}
+          describedBy={invalid ? errorId : undefined}
+          styles={styles}
+          onChange={onChange}
+        />
+      ) : shouldUseTextarea(variable) ? (
         <Textarea
           className={styles.textareaField}
           resize="vertical"
@@ -878,6 +915,49 @@ function Field({ variable, value, invalid, styles, onChange }: { variable: Promp
         />
       )}
       {invalid ? <span id={errorId} role="alert" className={styles.fieldError}>{variable.label} is required</span> : null}
+    </div>
+  );
+}
+
+function DiscreteSlider({
+  label,
+  value,
+  choices,
+  invalid,
+  describedBy,
+  styles,
+  onChange
+}: {
+  label: string;
+  value: string;
+  choices: Array<{ id: string; label: string }>;
+  invalid?: boolean;
+  describedBy?: string;
+  styles: ComposerStyles;
+  onChange: (value: string) => void;
+}) {
+  const selectedIndex = Math.max(0, choices.findIndex((choice) => choice.id === value));
+  const selected = choices[selectedIndex];
+
+  return (
+    <div className={styles.sliderControl}>
+      <Slider
+        className={styles.slider}
+        min={0}
+        max={Math.max(0, choices.length - 1)}
+        step={1}
+        value={selectedIndex}
+        aria-label={label}
+        aria-valuetext={selected?.label ?? ''}
+        aria-invalid={invalid || undefined}
+        aria-describedby={describedBy}
+        disabled={choices.length < 2}
+        onChange={(_, data) => {
+          const choice = choices[data.value];
+          if (choice) onChange(choice.id);
+        }}
+      />
+      <span className={styles.sliderValue}>{selected?.label ?? ''}</span>
     </div>
   );
 }

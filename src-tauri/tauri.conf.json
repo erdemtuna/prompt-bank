@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Prompt Bank",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "identifier": "com.erdemtuna.promptbank",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -42,6 +42,6 @@
     ],
     "category": "Productivity",
     "shortDescription": "Reusable prompts as local Markdown, composed and ready to paste.",
-    "longDescription": "Prompt Bank keeps your reusable prompts as local Markdown files and declares the parts that change as variables and optional sections. Fill them in, preview the composed text, and paste it into whichever AI tool you use. Built in prompts ship with the app; your own global and project prompts are read from disk at runtime and stay on your machine."
+    "longDescription": "Prompt Bank keeps your reusable prompts as local Markdown files and declares the parts that change as text inputs, dropdowns, sliders, and optional sections. Compose the prompt, preview the result, and paste it into whichever AI tool you use. Built in prompts ship with the app; your own global and project prompts are read from disk at runtime and stay on your machine."
   }
 }

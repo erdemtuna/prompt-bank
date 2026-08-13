@@ -1,4 +1,4 @@
-import { extractPlaceholders, renderPromptTemplateOptions, type ModelPreset, type Prompt, type PromptOption, type PromptVariable, type ValidationIssue } from './schemas';
+import { extractConditionVariableNames, extractPlaceholders, renderPromptTemplateControls, type ModelPreset, type Prompt, type PromptOption, type PromptVariable, type ValidationIssue } from './schemas';
 
 export type VariableValues = Record<string, string>;
 export type OptionValues = Record<string, boolean>;
@@ -42,25 +42,37 @@ export function initialOptionValues(options: PromptOption[]): OptionValues {
 }
 
 export function promptUsesModelPlaceholder(prompt: Prompt): boolean {
-  return extractPlaceholders(renderPromptTemplate(prompt, initialOptionValues(prompt.options))).includes('model');
+  return extractPlaceholders(renderPromptTemplate(prompt, initialOptionValues(prompt.options), initialVariableValues(prompt.variables))).includes('model');
 }
 
 export function promptUsesRubberDuckModelPlaceholder(prompt: Prompt): boolean {
-  return extractPlaceholders(renderPromptTemplate(prompt, initialOptionValues(prompt.options))).includes('rubberDuckModel');
+  return extractPlaceholders(renderPromptTemplate(prompt, initialOptionValues(prompt.options), initialVariableValues(prompt.variables))).includes('rubberDuckModel');
 }
 
 export function composePrompt(prompt: Prompt, values: VariableValues, builtIns: BuiltInValues = {}, options: CompositionOptions = {}): CompositionResult {
   const optionValues = { ...initialOptionValues(prompt.options), ...(options.optionValues ?? {}) };
-  const renderedTemplate = renderPromptTemplate(prompt, optionValues);
+  const variableValues = { ...initialVariableValues(prompt.variables), ...values };
+  const renderedTemplate = renderPromptTemplate(prompt, optionValues, variableValues);
   const placeholders = extractPlaceholders(renderedTemplate);
+  const conditionVariableNames = extractConditionVariableNames(prompt.template);
   const usesModelPlaceholder = placeholders.includes('model');
   const usesRubberDuckModelPlaceholder = placeholders.includes('rubberDuckModel');
   const usesAnyModelPlaceholder = usesModelPlaceholder || usesRubberDuckModelPlaceholder;
-  const activeVariableNames = prompt.options.length === 0
+  const hasConditionalBlocks = prompt.options.length > 0 || conditionVariableNames.length > 0;
+  const activeVariableNames = !hasConditionalBlocks
     ? prompt.variables.map((variable) => variable.name)
-    : prompt.variables.filter((variable) => placeholders.includes(variable.name)).map((variable) => variable.name);
+    : prompt.variables
+      .filter((variable) => placeholders.includes(variable.name) || conditionVariableNames.includes(variable.name))
+      .map((variable) => variable.name);
   const missingRequired = prompt.variables
-    .filter((variable) => activeVariableNames.includes(variable.name) && variable.required && !(values[variable.name] ?? variable.defaultValue ?? '').trim())
+    .filter((variable) => activeVariableNames.includes(variable.name) && variable.required && !(variableValues[variable.name] ?? '').trim())
+    .map((variable) => variable.name);
+  const invalidSelections = prompt.variables
+    .filter((variable) =>
+      activeVariableNames.includes(variable.name)
+      && (variable.control === 'select' || variable.control === 'slider')
+      && !variable.choices?.some((choice) => choice.id === variableValues[variable.name])
+    )
     .map((variable) => variable.name);
   const missingBuiltIns = modelBuiltIns.filter((name) => placeholders.includes(name) && !builtIns[name]?.trim());
   const validationBlockers = validationBlockersForPrompt(prompt, options.validationIssues ?? [], usesAnyModelPlaceholder);
@@ -69,10 +81,15 @@ export function composePrompt(prompt: Prompt, values: VariableValues, builtIns: 
     if (isModelBuiltIn(name) && !builtIns[name]?.trim()) {
       return `{{${name}}}`;
     }
-    return values[name] ?? builtIns[name] ?? prompt.variables.find((variable) => variable.name === name)?.defaultValue ?? '';
+    const variable = prompt.variables.find((candidate) => candidate.name === name);
+    if (variable) {
+      return interpolatedVariableValue(variable, variableValues[name] ?? '');
+    }
+    return builtIns[name] ?? '';
   });
   const disabledReasons = [
     ...missingRequired.map((name) => `Missing required variable "${name}".`),
+    ...invalidSelections.map((name) => `Select a valid choice for variable "${name}".`),
     ...missingBuiltIns.map((name) => `Select a valid ${modelBuiltInLabel(name)} for the built-in {{${name}}} placeholder.`),
     ...validationBlockers
   ];
@@ -91,9 +108,17 @@ export function composePrompt(prompt: Prompt, values: VariableValues, builtIns: 
   };
 }
 
-function renderPromptTemplate(prompt: Prompt, optionValues: OptionValues): string {
+function renderPromptTemplate(prompt: Prompt, optionValues: OptionValues, variableValues: VariableValues): string {
   const allOptionsDisabled = prompt.options.length > 0 && prompt.options.every((option) => optionValues[option.id] === false);
-  return renderPromptTemplateOptions(prompt.template, optionValues, allOptionsDisabled);
+  return renderPromptTemplateControls(prompt.template, optionValues, allOptionsDisabled, variableValues);
+}
+
+function interpolatedVariableValue(variable: PromptVariable, rawValue: string): string {
+  if (variable.control !== 'select' && variable.control !== 'slider') {
+    return rawValue;
+  }
+  const choice = variable.choices?.find((candidate) => candidate.id === rawValue);
+  return choice?.value ?? choice?.label ?? rawValue;
 }
 
 function validationBlockersForPrompt(prompt: Prompt, issues: ValidationIssue[], usesAnyModelPlaceholder: boolean): string[] {

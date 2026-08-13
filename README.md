@@ -4,7 +4,7 @@ Reusable prompts as local Markdown, composed and ready to paste.
 
 A prompt you rely on tends to exist in a dozen slightly different forms: copies scattered across chats, notes, and gists, each drifting a little from the last. Somewhere along the way a constraint gets dropped, or you paste a stale variant and do not notice until the answer comes back wrong.
 
-Prompt Bank keeps the canonical version in a Markdown file and declares the parts that change as variables and optional sections. The app turns that file into a form: fill the inputs, toggle the sections you want, watch the composed text update, then paste it into whichever AI tool you already use.
+Prompt Bank keeps the canonical version in a Markdown file and declares the parts that change as inputs, dropdowns, sliders, and optional sections. The app turns that file into a form: choose the workflow, set the intensity, toggle additive sections, watch the composed text update, then paste it into whichever AI tool you already use.
 
 ![The Prompt Bank interface](docs/screenshot.png)
 
@@ -26,7 +26,7 @@ Prefer to build it yourself? See [Building the desktop app](#building-the-deskto
 
 ## Why Prompt Bank
 
-- Composable. Declare variables, optional focus toggles, and model preset labels, and the composed text updates live as you fill them in.
+- Composable. Declare text inputs, dropdowns, ordered sliders, optional focus toggles, and model preset labels, and the composed text updates live as you fill them in.
 - Structured. Prompts are Markdown with a small, checked schema, so a malformed prompt is caught before you rely on it.
 - Yours to keep. Plain files you can diff, grep, and commit next to the code they belong to. No account, no proprietary format, nothing to migrate later.
 - Together in one place. A personal global set and any project folder you open appear alongside the built in prompts, each with a source label.
@@ -105,7 +105,7 @@ npm run dev
 
 ## Bring your own prompts
 
-You do not edit the app to add prompts. Put Markdown files in either place and they appear with the same interface, variables, optional focus toggles, model preset labels, live preview, and copy:
+You do not edit the app to add prompts. Put Markdown files in either place and they appear with the same interface, typed inputs, optional focus toggles, model preset labels, live preview, and copy:
 
 - Global: `~/.prompt-bank/<category>/your-prompt.md`
 - Folder: `<a folder you open>/.prompt-bank/<category>/your-prompt.md`
@@ -168,7 +168,7 @@ The pure Rust core is tested in CI with `cargo test -p prompt-bank-core`. A nati
 
 Installers for all three desktop operating systems are built automatically by the `Release` GitHub Actions workflow, which runs `tauri-apps/tauri-action` on macOS, Windows, and Linux runners.
 
-- To cut a release, push a version tag that matches the version in `package.json` and `src-tauri/tauri.conf.json`, for example `git tag v0.3.0 && git push origin v0.3.0`. The workflow creates one release, has every platform job upload its installer to that same release, and then publishes it as the latest release only after all builds succeed. macOS is built for both Apple Silicon and Intel.
+- To cut a release, push a version tag that matches the version in `package.json` and `src-tauri/tauri.conf.json`, for example `git tag v0.4.0 && git push origin v0.4.0`. The workflow creates one release, has every platform job upload its installer to that same release, and then publishes it as the latest release only after all builds succeed. macOS is built for both Apple Silicon and Intel.
 - To produce installers without a release, run the workflow manually from the Actions tab (`workflow_dispatch`). The bundles are uploaded as downloadable workflow artifacts.
 
 The produced bundles are the Windows `.exe` (NSIS) and `.msi`, the macOS `.app` and `.dmg`, and the Linux `.AppImage` and `.deb`. They are unsigned for now, so macOS Gatekeeper and Windows SmartScreen may warn on first open; signing is a later step.

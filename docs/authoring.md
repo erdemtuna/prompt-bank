@@ -51,9 +51,56 @@ variables:
 
 Use a `default` for stable, repeated values. Do not default a value that should force a real decision.
 
+## Dropdowns and sliders
+
+Use a dropdown when the prompt needs exactly one workflow or behavior:
+
+```yaml
+variables:
+  - name: delivery
+    label: Delivery
+    control: select
+    default: conversation
+    choices:
+      - id: conversation
+        label: Conversation only
+      - id: report
+        label: HTML report
+```
+
+Use a slider for an ordered scale:
+
+```yaml
+variables:
+  - name: depth
+    label: Analysis depth
+    control: slider
+    default: focused
+    choices:
+      - id: brief
+        label: Brief
+      - id: focused
+        label: Focused
+      - id: deep
+        label: Deep
+```
+
+Both controls require at least two choices and a default choice id. Include value-specific instructions with `{{#when}}` blocks:
+
+```markdown
+{{#when delivery conversation}}
+Answer inline and create no artifact.
+{{/when}}
+{{#when delivery report}}
+Create an HTML report and return its path.
+{{/when}}
+```
+
+Do not nest conditional blocks. Use checkboxes only when several independent sections may be included together.
+
 ## Optional focus blocks
 
-Options are toggles that include or omit a block of the prompt at copy time. Declare them under `options`, then wrap the matching block with `{{#option id}} ... {{/option}}`. Every declared option must be used, and any prompt with options must include an `{{#allOptionsDisabled}} ... {{/allOptionsDisabled}}` fallback for when all options are off.
+Options are additive toggles that include or omit a block of the prompt at copy time. Declare them under `options`, then wrap the matching block with `{{#option id}} ... {{/option}}`. Every declared option must be used, and any prompt with options must include an `{{#allOptionsDisabled}} ... {{/allOptionsDisabled}}` fallback for when all options are off.
 
 ```markdown
 ---
@@ -95,7 +142,7 @@ A conditional block tag that sits on its own line is treated as a control line a
 
 Two built in placeholders insert a descriptive model label chosen in the interface. Use `{{model}}` for the general model and `{{rubberDuckModel}}` for an alternative or reviewer model. Do not declare variables named `model` or `rubberDuckModel`. Set `model_default` to a preset id from `model-presets.yaml` to preselect one.
 
-When a preset declares `contexts` or `reasoning`, the interface shows a matching dropdown beside that model and folds the choice into the same placeholder, so a prompt written as `{{model}}` can copy as `GPT-5.6 Terra 1M context extra high reasoning` without any change to the template. See `schema.md` for the preset format.
+When a preset declares `contexts` or `reasoning`, the interface shows a context dropdown and a reasoning slider beside that model and folds the choices into the same placeholder, so a prompt written as `{{model}}` can copy as `GPT-5.6 Terra 1M context medium reasoning` without any change to the template. See `schema.md` for the preset format.
 
 ```markdown
 ---
@@ -149,6 +196,7 @@ Common errors it catches:
 - A placeholder in the body that is not declared in `variables`.
 - A malformed placeholder such as `{{bad-name}}` or `{{ }}`.
 - A duplicate `id` or a duplicate variable name.
+- A select or slider with missing choices, an invalid default, or an unknown `{{#when}}` value.
 - A prompt that declares options but has no `{{#allOptionsDisabled}}` fallback.
 - A `model_default` that does not match a preset id.
 

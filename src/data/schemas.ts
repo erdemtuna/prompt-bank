@@ -17,6 +17,14 @@ export type PromptVariable = {
   description?: string;
   required: boolean;
   defaultValue?: string;
+  control?: 'text' | 'textarea' | 'select' | 'slider';
+  choices?: PromptChoice[];
+};
+
+export type PromptChoice = {
+  id: string;
+  label: string;
+  value?: string;
 };
 
 export type PromptOption = {
@@ -122,7 +130,16 @@ const variableObjectSchema = z.object({
   description: z.string().optional(),
   required: z.boolean().optional(),
   default: z.union([z.string(), z.number(), z.boolean()]).optional(),
-  defaultValue: z.union([z.string(), z.number(), z.boolean()]).optional()
+  defaultValue: z.union([z.string(), z.number(), z.boolean()]).optional(),
+  control: z.enum(['text', 'textarea', 'select', 'slider']).optional(),
+  choices: z.unknown().optional()
+}).passthrough();
+
+const choiceObjectSchema = z.object({
+  id: z.string().optional(),
+  name: z.string().optional(),
+  label: z.string().optional(),
+  value: z.union([z.string(), z.number(), z.boolean()]).optional()
 }).passthrough();
 
 const optionObjectSchema = z.object({
@@ -147,7 +164,7 @@ function normalizeLineEndings(text: string): string {
  */
 function stripStandaloneBlockTagLines(template: string): string {
   return template.replace(
-    /^[ \t]*(\{\{[ \t]*(?:#option[ \t]+[A-Za-z_][A-Za-z0-9_]*|\/option|#allOptionsDisabled|\/allOptionsDisabled)[ \t]*\}\})[ \t]*(?:\n|$)/gm,
+    /^[ \t]*(\{\{[ \t]*(?:#option[ \t]+[A-Za-z_][A-Za-z0-9_]*|\/option|#allOptionsDisabled|\/allOptionsDisabled|#when[ \t]+[A-Za-z_][A-Za-z0-9_]*[ \t]+[A-Za-z_][A-Za-z0-9_]*|\/when)[ \t]*\}\})[ \t]*(?:\n|$)/gm,
     '$1'
   );
 }
@@ -196,9 +213,9 @@ export function parsePromptFile(path: string, raw: string): { prompt?: ParsedPro
 
   const variables = normalizeVariables(path, frontmatter.data.variables, issues);
   const options = normalizeOptions(path, frontmatter.data.options, issues);
-  const declaredNames = new Set(variables.map((variable) => variable.name));
+  const declaredVariables = new Map(variables.map((variable) => [variable.name, variable]));
   const declaredOptionIds = new Set(options.map((option) => option.id));
-  issues.push(...validateTemplatePlaceholders(path, template, declaredNames, declaredOptionIds, options.length));
+  issues.push(...validateTemplatePlaceholders(path, template, declaredVariables, declaredOptionIds, options.length));
 
   if (issues.length > 0) {
     return { promptIdentity, issues };
@@ -383,27 +400,78 @@ export function extractPlaceholders(template: string): string[] {
   return [...names];
 }
 
+export function extractConditionVariableNames(template: string): string[] {
+  const names = new Set<string>();
+  for (const span of extractTemplateSpans(template)) {
+    if (span.kind === 'whenOpen') {
+      names.add(span.variableName);
+    }
+  }
+  return [...names];
+}
+
 export function renderPromptTemplateOptions(template: string, optionValues: Record<string, boolean>, allOptionsDisabled: boolean): string {
-  return stripStandaloneBlockTagLines(normalizeLineEndings(template))
+  return cleanRenderedTemplate(
+    stripStandaloneBlockTagLines(normalizeLineEndings(template))
     .replace(/\{\{\s*#option\s+([A-Za-z_][A-Za-z0-9_]*)\s*\}\}([\s\S]*?)\{\{\s*\/option\s*\}\}/g, (_, optionId: string, content: string) =>
       optionValues[optionId] ? content : ''
     )
     .replace(/\{\{\s*#allOptionsDisabled\s*\}\}([\s\S]*?)\{\{\s*\/allOptionsDisabled\s*\}\}/g, (_, content: string) =>
       allOptionsDisabled ? content : ''
     )
-    // Reduce lines that hold only spaces or tabs to true blank lines so a stray whitespace line cannot survive.
+  );
+}
+
+export function renderPromptTemplateConditions(template: string, variableValues: Record<string, string>): string {
+  return cleanRenderedTemplate(
+    stripStandaloneBlockTagLines(normalizeLineEndings(template))
+      .replace(
+        /\{\{\s*#when\s+([A-Za-z_][A-Za-z0-9_]*)\s+([A-Za-z_][A-Za-z0-9_]*)\s*\}\}([\s\S]*?)\{\{\s*\/when\s*\}\}/g,
+        (_, variableName: string, choiceId: string, content: string) => variableValues[variableName] === choiceId ? content : ''
+      )
+  );
+}
+
+export function renderPromptTemplateControls(
+  template: string,
+  optionValues: Record<string, boolean>,
+  allOptionsDisabled: boolean,
+  variableValues: Record<string, string>
+): string {
+  return cleanRenderedTemplate(
+    stripStandaloneBlockTagLines(normalizeLineEndings(template))
+      .replace(/\{\{\s*#option\s+([A-Za-z_][A-Za-z0-9_]*)\s*\}\}([\s\S]*?)\{\{\s*\/option\s*\}\}/g, (_, optionId: string, content: string) =>
+        optionValues[optionId] ? content : ''
+      )
+      .replace(/\{\{\s*#allOptionsDisabled\s*\}\}([\s\S]*?)\{\{\s*\/allOptionsDisabled\s*\}\}/g, (_, content: string) =>
+        allOptionsDisabled ? content : ''
+      )
+      .replace(
+        /\{\{\s*#when\s+([A-Za-z_][A-Za-z0-9_]*)\s+([A-Za-z_][A-Za-z0-9_]*)\s*\}\}([\s\S]*?)\{\{\s*\/when\s*\}\}/g,
+        (_, variableName: string, choiceId: string, content: string) => variableValues[variableName] === choiceId ? content : ''
+      )
+  );
+}
+
+function cleanRenderedTemplate(template: string): string {
+  return template
     .replace(/^[ \t]+$/gm, '')
-    // Collapse a run of blank lines to a single blank line.
     .replace(/\n{3,}/g, '\n\n')
     .trim();
 }
 
-function validateTemplatePlaceholders(path: string, template: string, declaredNames: Set<string>, declaredOptionIds: Set<string>, optionCount: number): ValidationIssue[] {
+function validateTemplatePlaceholders(
+  path: string,
+  template: string,
+  declaredVariables: Map<string, PromptVariable>,
+  declaredOptionIds: Set<string>,
+  optionCount: number
+): ValidationIssue[] {
   const issues: ValidationIssue[] = [];
   const unknownPlaceholders = new Set<string>();
   const usedOptionIds = new Set<string>();
   let hasAllOptionsDisabledBlock = false;
-  const blockStack: { kind: 'option' | 'allOptionsDisabled'; raw: string; optionId?: string }[] = [];
+  const blockStack: { kind: 'option' | 'allOptionsDisabled' | 'when'; raw: string; optionId?: string }[] = [];
 
   for (const span of extractTemplateSpans(template)) {
     if (span.kind === 'invalid') {
@@ -412,7 +480,7 @@ function validateTemplatePlaceholders(path: string, template: string, declaredNa
     }
 
     if (span.kind === 'placeholder') {
-      if (!declaredNames.has(span.name) && !builtInPlaceholders.has(span.name) && !unknownPlaceholders.has(span.name)) {
+      if (!declaredVariables.has(span.name) && !builtInPlaceholders.has(span.name) && !unknownPlaceholders.has(span.name)) {
         unknownPlaceholders.add(span.name);
         issues.push(promptIssue(path, `Unknown placeholder "${span.name}" is not declared as a variable.`));
       }
@@ -443,6 +511,22 @@ function validateTemplatePlaceholders(path: string, template: string, declaredNa
       continue;
     }
 
+    if (span.kind === 'whenOpen') {
+      if (blockStack.length > 0) {
+        issues.push(promptIssue(path, 'Nested conditional blocks are not supported.'));
+      }
+      const variable = declaredVariables.get(span.variableName);
+      if (!variable) {
+        issues.push(promptIssue(path, `Unknown condition variable "${span.variableName}" is not declared as a variable.`));
+      } else if (variable.control !== 'select' && variable.control !== 'slider') {
+        issues.push(promptIssue(path, `Condition variable "${span.variableName}" must use control "select" or "slider".`));
+      } else if (!variable.choices?.some((choice) => choice.id === span.choiceId)) {
+        issues.push(promptIssue(path, `Unknown choice "${span.choiceId}" for condition variable "${span.variableName}".`));
+      }
+      blockStack.push({ kind: 'when', raw: span.raw });
+      continue;
+    }
+
     if (span.kind === 'optionClose') {
       if (blockStack.length === 0) {
         issues.push(promptIssue(path, 'Stray closing option block "{{/option}}".'));
@@ -464,14 +548,28 @@ function validateTemplatePlaceholders(path: string, template: string, declaredNa
       if (openBlock.kind !== 'allOptionsDisabled') {
         issues.push(promptIssue(path, `Mismatched closing tag "{{/allOptionsDisabled}}" for "${openBlock.raw}".`));
       }
+      continue;
+    }
+
+    if (span.kind === 'whenClose') {
+      if (blockStack.length === 0) {
+        issues.push(promptIssue(path, 'Stray closing condition block "{{/when}}".'));
+        continue;
+      }
+      const openBlock = blockStack.pop()!;
+      if (openBlock.kind !== 'when') {
+        issues.push(promptIssue(path, `Mismatched closing tag "{{/when}}" for "${openBlock.raw}".`));
+      }
     }
   }
 
   for (const openBlock of blockStack) {
     if (openBlock.kind === 'option') {
       issues.push(promptIssue(path, `Unclosed option block "${openBlock.raw}".`));
-    } else {
+    } else if (openBlock.kind === 'allOptionsDisabled') {
       issues.push(promptIssue(path, `Unclosed all-options-disabled block "${openBlock.raw}".`));
+    } else {
+      issues.push(promptIssue(path, `Unclosed condition block "${openBlock.raw}".`));
     }
   }
   for (const optionId of declaredOptionIds) {
@@ -496,6 +594,8 @@ type TemplateSpan =
   | { kind: 'optionClose'; raw: string }
   | { kind: 'allOptionsDisabledOpen'; raw: string }
   | { kind: 'allOptionsDisabledClose'; raw: string }
+  | { kind: 'whenOpen'; variableName: string; choiceId: string; raw: string }
+  | { kind: 'whenClose'; raw: string }
   | { kind: 'invalid'; message: string };
 
 function extractTemplateSpans(template: string): TemplateSpan[] {
@@ -514,6 +614,7 @@ function extractTemplateSpans(template: string): TemplateSpan[] {
       const raw = template.slice(index, closeIndex + (hasExtraClosingBrace ? 3 : 2));
       const content = template.slice(index + 2, closeIndex).trim();
       const optionMatch = content.match(/^#option\s+([A-Za-z_][A-Za-z0-9_]*)$/);
+      const whenMatch = content.match(/^#when\s+([A-Za-z_][A-Za-z0-9_]*)\s+([A-Za-z_][A-Za-z0-9_]*)$/);
 
       if (hasExtraClosingBrace) {
         spans.push({ kind: 'invalid', message: `Invalid placeholder syntax "${raw}". Use {{variableName}} with letters, numbers, or underscores only.` });
@@ -525,10 +626,16 @@ function extractTemplateSpans(template: string): TemplateSpan[] {
         spans.push({ kind: 'allOptionsDisabledOpen', raw });
       } else if (content === '/allOptionsDisabled') {
         spans.push({ kind: 'allOptionsDisabledClose', raw });
+      } else if (whenMatch) {
+        spans.push({ kind: 'whenOpen', variableName: whenMatch[1], choiceId: whenMatch[2], raw });
+      } else if (content === '/when') {
+        spans.push({ kind: 'whenClose', raw });
       } else if (content.startsWith('#option') || content.startsWith('/option')) {
         spans.push({ kind: 'invalid', message: `Invalid option block syntax "${raw}". Use {{#option optionId}} and {{/option}}.` });
       } else if (content.startsWith('#allOptionsDisabled') || content.startsWith('/allOptionsDisabled')) {
         spans.push({ kind: 'invalid', message: `Invalid all-options-disabled block syntax "${raw}". Use {{#allOptionsDisabled}} and {{/allOptionsDisabled}}.` });
+      } else if (content.startsWith('#when') || content.startsWith('/when')) {
+        spans.push({ kind: 'invalid', message: `Invalid condition block syntax "${raw}". Use {{#when variableName choiceId}} and {{/when}}.` });
       } else if (variableNamePattern.test(content)) {
         spans.push({ kind: 'placeholder', name: content });
       } else {
@@ -575,13 +682,7 @@ function normalizeVariables(path: string, input: unknown, issues: ValidationIssu
         issues.push(promptIssue(path, 'Variable is missing name or id.'));
         continue;
       }
-      pushVariable(path, issues, variables, {
-        name,
-        label: parsed.data.label?.trim() || name,
-        description: parsed.data.description,
-        required: parsed.data.required ?? true,
-        defaultValue: stringifyDefault(parsed.data.defaultValue ?? parsed.data.default)
-      });
+      pushVariable(path, issues, variables, normalizeVariable(path, name, parsed.data, issues));
     }
   } else if (typeof input === 'object') {
     for (const [key, value] of Object.entries(input as Record<string, unknown>)) {
@@ -594,13 +695,7 @@ function normalizeVariables(path: string, input: unknown, issues: ValidationIssu
         issues.push(...zodIssues(path, parsed.error, 'prompt'));
         continue;
       }
-      pushVariable(path, issues, variables, {
-        name: key,
-        label: parsed.data.label?.trim() || key,
-        description: parsed.data.description,
-        required: parsed.data.required ?? true,
-        defaultValue: stringifyDefault(parsed.data.defaultValue ?? parsed.data.default)
-      });
+      pushVariable(path, issues, variables, normalizeVariable(path, key, parsed.data, issues));
     }
   } else {
     issues.push(promptIssue(path, 'Variables must be an array or object.'));
@@ -617,6 +712,89 @@ function normalizeVariables(path: string, input: unknown, issues: ValidationIssu
   }
 
   return variables;
+}
+
+function normalizeVariable(
+  path: string,
+  name: string,
+  data: z.infer<typeof variableObjectSchema>,
+  issues: ValidationIssue[]
+): PromptVariable {
+  const control = data.control;
+  const defaultValue = stringifyDefault(data.defaultValue ?? data.default);
+  const choices = normalizeChoices(path, name, data.choices, issues);
+  const usesChoices = control === 'select' || control === 'slider';
+
+  if (usesChoices) {
+    if (choices.length < 2) {
+      issues.push(promptIssue(path, `Variable "${name}" with control "${control}" must declare at least two choices.`));
+    }
+    if (!defaultValue) {
+      issues.push(promptIssue(path, `Variable "${name}" with control "${control}" must declare a default choice.`));
+    } else if (!choices.some((choice) => choice.id === defaultValue)) {
+      issues.push(promptIssue(path, `Variable "${name}" sets default "${defaultValue}" that is not one of its choices.`));
+    }
+  } else if (data.choices != null) {
+    issues.push(promptIssue(path, `Variable "${name}" may declare choices only when control is "select" or "slider".`));
+  }
+
+  return {
+    name,
+    label: data.label?.trim() || name,
+    description: data.description?.trim() || undefined,
+    required: data.required ?? true,
+    defaultValue,
+    control,
+    ...(usesChoices ? { choices } : {})
+  };
+}
+
+function normalizeChoices(path: string, variableName: string, input: unknown, issues: ValidationIssue[]): PromptChoice[] {
+  if (input == null) return [];
+  if (!Array.isArray(input)) {
+    issues.push(promptIssue(path, `Choices for variable "${variableName}" must be an array.`));
+    return [];
+  }
+
+  const choices: PromptChoice[] = [];
+  for (const item of input) {
+    if (typeof item === 'string') {
+      const id = item.trim();
+      if (id) choices.push({ id, label: id });
+      continue;
+    }
+
+    const parsed = choiceObjectSchema.safeParse(item);
+    if (!parsed.success) {
+      issues.push(...zodIssues(path, parsed.error, 'prompt'));
+      continue;
+    }
+    const id = parsed.data.id?.trim() || parsed.data.name?.trim();
+    if (!id) {
+      issues.push(promptIssue(path, `A choice for variable "${variableName}" is missing id or name.`));
+      continue;
+    }
+    choices.push({
+      id,
+      label: parsed.data.label?.trim() || id,
+      value: stringifyDefault(parsed.data.value)
+    });
+  }
+
+  const counts = new Map<string, number>();
+  for (const choice of choices) {
+    if (!variableNamePattern.test(choice.id)) {
+      issues.push(promptIssue(path, `Choice id "${choice.id}" for variable "${variableName}" must start with a letter or underscore and contain only letters, numbers, and underscores.`));
+    }
+    counts.set(choice.id, (counts.get(choice.id) ?? 0) + 1);
+  }
+  for (const [id, count] of counts) {
+    if (count > 1) {
+      issues.push(promptIssue(path, `Variable "${variableName}" has duplicate choice id "${id}".`));
+    }
+  }
+
+  return choices.filter((choice) => variableNamePattern.test(choice.id));
 }
 
 function normalizeOptions(path: string, input: unknown, issues: ValidationIssue[]): PromptOption[] {

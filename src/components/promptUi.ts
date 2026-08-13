@@ -9,6 +9,9 @@ export function formatCount(count: number, singular: string, plural = `${singula
 }
 
 export function shouldUseTextarea(variable: PromptVariable): boolean {
+  if (variable.control === 'textarea') return true;
+  if (variable.control === 'text' || variable.control === 'select' || variable.control === 'slider') return false;
+
   const defaultValue = variable.defaultValue ?? '';
   const description = variable.description?.toLowerCase() ?? '';
   const name = variable.name.toLowerCase();

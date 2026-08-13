@@ -90,6 +90,39 @@ test('optional focus blocks include, exclude, and fall back', async ({ page }) =
   await expect(preview).toContainText(fallback);
 });
 
+test('select controls switch exclusive implementation-plan branches', async ({ page }) => {
+  await page.getByRole('button', { name: 'Implementation Plan' }).click();
+  const preview = page.getByRole('region', { name: 'Composed prompt' });
+  const execution = page.getByLabel('Approved plan execution');
+
+  await expect(execution).toHaveValue('nativeSubagents');
+  await expect(preview).toContainText('design implementation waves for native');
+  await expect(preview).not.toContainText('design implementation waves for independent Copilot CLI sessions');
+
+  await execution.selectOption('independentSessions');
+  await expect(preview).toContainText('Do not launch them while creating this plan.');
+  await expect(preview).toContainText('worktree, branch, standalone brief');
+  await expect(preview).not.toContainText('design implementation waves for native');
+});
+
+test('slider controls select one ordered investigation-depth branch', async ({ page }) => {
+  await page.getByRole('button', { name: 'Investigate a Topic' }).click();
+  const preview = page.getByRole('region', { name: 'Composed prompt' });
+  const depth = page.getByRole('slider', { name: 'Analysis depth' });
+
+  await expect(depth).toHaveAttribute('aria-valuetext', 'Focused');
+  await expect(preview).toContainText('trace the relevant implementation paths');
+
+  await depth.press('Home');
+  await expect(depth).toHaveAttribute('aria-valuetext', 'Brief');
+  await expect(preview).toContainText('inspect the minimum evidence needed');
+  await expect(preview).not.toContainText('trace the relevant implementation paths');
+
+  await depth.press('End');
+  await expect(depth).toHaveAttribute('aria-valuetext', 'Deep');
+  await expect(preview).toContainText('follow the topic across subsystem boundaries');
+});
+
 test('both model selectors insert the chosen preset labels', async ({ page }) => {
   await page.getByRole('button', { name: 'Review a Pull Request' }).click();
   const preview = page.getByRole('region', { name: 'Composed prompt' });
@@ -97,7 +130,7 @@ test('both model selectors insert the chosen preset labels', async ({ page }) =>
   await page.getByLabel('General model').selectOption('opus-5');
   await page.getByLabel('Alternative model').selectOption('gpt-5-6-sol');
   await expect(preview).toContainText(
-    'Use Opus 5 1M context extra high reasoning as the primary reviewer, and a set of GPT-5.6 Sol 1M context extra high reasoning reviewers as independent second opinions.'
+    'Use Opus 5 1M context medium reasoning as the primary reviewer, and a set of GPT-5.6 Sol 1M context medium reasoning reviewers as independent second opinions.'
   );
 });
 
@@ -107,11 +140,15 @@ test('context and reasoning selectors refine the composed model label', async ({
 
   await page.getByLabel('General model').selectOption('gpt-5-6-terra');
   await page.getByLabel('General context').selectOption('1m');
-  await page.getByLabel('General reasoning').selectOption('max');
+  const reasoning = page.getByRole('slider', { name: 'General reasoning' });
+  await reasoning.press('End');
   await expect(preview).toContainText('Use GPT-5.6 Terra 1M context max reasoning as the primary reviewer');
 
   await page.getByLabel('General context').selectOption('standard');
   await expect(preview).toContainText('Use GPT-5.6 Terra max reasoning as the primary reviewer');
+
+  await reasoning.press('Home');
+  await expect(preview).toContainText('Use GPT-5.6 Terra no reasoning as the primary reviewer');
 });
 
 test('command prompts copy a shell ready command', async ({ page }) => {

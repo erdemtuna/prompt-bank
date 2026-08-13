@@ -271,6 +271,152 @@ describe('composer', () => {
     expect(result.canCopy).toBe(true);
   });
 
+  it('renders one value condition and keeps a condition-only control active beside checkbox options', () => {
+    const prompt = makePromptWithControls(
+      [
+        'Plan {{name}}.',
+        '{{#when executionTarget currentSession}}Run approved waves here.{{/when}}',
+        '{{#when executionTarget independentSessions}}Run approved waves in independent sessions.{{/when}}',
+        '{{#option frontendFocus}}Include frontend concerns.{{/option}}',
+        '{{#allOptionsDisabled}}No additive focus.{{/allOptionsDisabled}}'
+      ].join('\n'),
+      [
+        {
+          name: 'executionTarget',
+          label: 'Execution target',
+          required: true,
+          control: 'select',
+          defaultValue: 'currentSession',
+          choices: [
+            { id: 'currentSession', label: 'Current session' },
+            { id: 'independentSessions', label: 'Independent sessions' }
+          ]
+        }
+      ],
+      [{ id: 'frontendFocus', label: 'Frontend', defaultEnabled: true }]
+    );
+
+    const result = composePrompt(
+      prompt,
+      { name: 'the change', place: 'repo', executionTarget: 'independentSessions' },
+      {},
+      { optionValues: { frontendFocus: false } }
+    );
+
+    expect(result.text).toContain('Run approved waves in independent sessions.');
+    expect(result.text).not.toContain('Run approved waves here.');
+    expect(result.activeVariableNames).toContain('executionTarget');
+    expect(result.activeVariableNames).toContain('name');
+    expect(result.canCopy).toBe(true);
+  });
+
+  it('interpolates typed choices using their prompt value or label instead of the raw id', () => {
+    const prompt = makePromptWithControls(
+      'Execute with {{executionTarget}} at {{analysisDepth}}.',
+      [
+        {
+          name: 'executionTarget',
+          label: 'Execution target',
+          required: true,
+          control: 'select',
+          defaultValue: 'independentSessions',
+          choices: [
+            { id: 'currentSession', label: 'Current session' },
+            { id: 'independentSessions', label: 'Independent sessions', value: 'separate Copilot CLI sessions' }
+          ]
+        },
+        {
+          name: 'analysisDepth',
+          label: 'Analysis depth',
+          required: true,
+          control: 'slider',
+          defaultValue: 'focused',
+          choices: [
+            { id: 'brief', label: 'Brief' },
+            { id: 'focused', label: 'Focused' },
+            { id: 'exhaustive', label: 'Exhaustive' }
+          ]
+        }
+      ]
+    );
+
+    const result = composePrompt(prompt, {
+      name: 'work',
+      place: 'repo',
+      executionTarget: 'independentSessions',
+      analysisDepth: 'focused'
+    });
+
+    expect(result.text).toBe('Execute with separate Copilot CLI sessions at Focused.');
+    expect(result.text).not.toContain('independentSessions');
+  });
+
+  it('does not require inputs or models that exist only inside an inactive value condition', () => {
+    const prompt = makePromptWithControls(
+      [
+        '{{#when delivery conversation}}Answer inline.{{/when}}',
+        '{{#when delivery report}}Use {{model}} to write {{place}}.{{/when}}'
+      ].join('\n'),
+      [
+        {
+          name: 'delivery',
+          label: 'Delivery',
+          required: true,
+          control: 'select',
+          defaultValue: 'conversation',
+          choices: [
+            { id: 'conversation', label: 'Conversation' },
+            { id: 'report', label: 'Report' }
+          ]
+        }
+      ]
+    );
+
+    const result = composePrompt(prompt, { name: '', place: '', delivery: 'conversation' });
+
+    expect(result.text).toBe('Answer inline.');
+    expect(result.activeVariableNames).toEqual(['delivery']);
+    expect(result.missingRequired).toEqual([]);
+    expect(result.missingBuiltIns).toEqual([]);
+    expect(result.canCopy).toBe(true);
+    expect(promptUsesModelPlaceholder(prompt)).toBe(false);
+  });
+
+  it('renders standalone value-condition blocks consistently under LF and CRLF', () => {
+    const source = [
+      'Delivery:',
+      '',
+      '{{#when delivery conversation}}',
+      '- Answer inline.',
+      '{{/when}}',
+      '{{#when delivery report}}',
+      '- Create a report.',
+      '{{/when}}',
+      '',
+      'Stop.'
+    ].join('\n');
+
+    for (const template of [source, source.replace(/\n/g, '\r\n')]) {
+      const prompt = makePromptWithControls(template, [
+        {
+          name: 'delivery',
+          label: 'Delivery',
+          required: true,
+          control: 'select',
+          defaultValue: 'conversation',
+          choices: [
+            { id: 'conversation', label: 'Conversation' },
+            { id: 'report', label: 'Report' }
+          ]
+        }
+      ]);
+      const result = composePrompt(prompt, { name: 'work', place: 'repo', delivery: 'report' });
+
+      expect(result.text).toBe('Delivery:\n\n- Create a report.\n\nStop.');
+      expect(result.text).not.toContain('\r');
+    }
+  });
+
   it('detects model placeholder usage from default-enabled option blocks only', () => {
     expect(promptUsesModelPlaceholder(makePromptWithOptions('{{#option frontendFocus}}Use {{model}}.{{/option}}'))).toBe(true);
     expect(promptUsesModelPlaceholder(makePromptWithOptions('{{#option backendFocus}}Use {{model}}.{{/option}}', [
@@ -293,6 +439,8 @@ describe('prompt UI helpers', () => {
     expect(shouldUseTextarea({ name: 'context', label: 'Context', required: false, defaultValue: 'Short value' })).toBe(true);
     expect(shouldUseTextarea({ name: 'notes', label: 'Notes', required: false, defaultValue: 'Line one\nLine two' })).toBe(true);
     expect(shouldUseTextarea({ name: 'notes', label: 'Notes', required: false, defaultValue: 'x'.repeat(91) })).toBe(true);
+    expect(shouldUseTextarea({ name: 'context', label: 'Context', required: false, control: 'text' })).toBe(false);
+    expect(shouldUseTextarea({ name: 'title', label: 'Title', required: false, control: 'textarea' })).toBe(true);
   });
 });
 
@@ -430,6 +578,164 @@ describe('prompt validation', () => {
       ['frontendFocus', false],
       ['backendFocus', false]
     ]);
+  });
+
+  it('parses select and slider controls with ordered choices and defaults', () => {
+    const result = parsePromptFile(
+      'prompts/example.md',
+      [
+        '---',
+        'id: example',
+        'title: Example',
+        'description: Example prompt',
+        'category: planning',
+        'variables:',
+        '  - name: executionTarget',
+        '    label: Approved execution',
+        '    control: select',
+        '    default: nativeSubagents',
+        '    choices:',
+        '      - id: currentSession',
+        '        label: Current session',
+        '      - id: nativeSubagents',
+        '        label: Native subagents',
+        '      - id: independentSessions',
+        '        label: Independent sessions',
+        '        value: separate Copilot sessions',
+        '  - name: depth',
+        '    control: slider',
+        '    default: focused',
+        '    choices:',
+        '      - id: brief',
+        '        label: Brief',
+        '      - id: focused',
+        '        label: Focused',
+        '---',
+        '{{#when executionTarget independentSessions}}Use {{executionTarget}}.{{/when}}',
+        '{{#when depth focused}}Investigate at {{depth}} depth.{{/when}}'
+      ].join('\n')
+    );
+
+    expect(result.issues).toEqual([]);
+    expect(result.prompt?.variables[0]).toEqual(expect.objectContaining({
+      name: 'executionTarget',
+      control: 'select',
+      defaultValue: 'nativeSubagents',
+      choices: expect.arrayContaining([
+        expect.objectContaining({ id: 'independentSessions', value: 'separate Copilot sessions' })
+      ])
+    }));
+    expect(result.prompt?.variables[1]).toEqual(expect.objectContaining({
+      control: 'slider',
+      defaultValue: 'focused'
+    }));
+  });
+
+  it('validates typed-control choices, defaults, and condition references', () => {
+    const result = parsePromptFile(
+      'prompts/example.md',
+      [
+        '---',
+        'id: example',
+        'title: Example',
+        'description: Example prompt',
+        'category: planning',
+        'variables:',
+        '  - name: executionTarget',
+        '    control: select',
+        '    default: missing',
+        '    choices:',
+        '      - id: currentSession',
+        '      - id: currentSession',
+        '  - name: context',
+        '---',
+        '{{#when executionTarget unknown}}Unknown choice.{{/when}}',
+        '{{#when context currentSession}}Invalid control.{{/when}}',
+        '{{#when undeclared currentSession}}Unknown variable.{{/when}}'
+      ].join('\n')
+    );
+
+    expect(result.issues.some((issue) => issue.message.includes('duplicate choice id "currentSession"'))).toBe(true);
+    expect(result.issues.some((issue) => issue.message.includes('sets default "missing" that is not one of its choices'))).toBe(true);
+    expect(result.issues.some((issue) => issue.message.includes('Unknown choice "unknown"'))).toBe(true);
+    expect(result.issues.some((issue) => issue.message.includes('Condition variable "context" must use control'))).toBe(true);
+    expect(result.issues.some((issue) => issue.message.includes('Unknown condition variable "undeclared"'))).toBe(true);
+  });
+
+  it('requires typed controls to declare a valid default and at least two choices', () => {
+    const result = parsePromptFile(
+      'prompts/example.md',
+      [
+        '---',
+        'id: example',
+        'title: Example',
+        'description: Example prompt',
+        'category: planning',
+        'variables:',
+        '  - name: delivery',
+        '    control: select',
+        '    choices:',
+        '      - id: conversation',
+        '---',
+        '{{#when delivery conversation}}Inline.{{/when}}'
+      ].join('\n')
+    );
+
+    expect(result.issues.some((issue) => issue.message.includes('must declare at least two choices'))).toBe(true);
+    expect(result.issues.some((issue) => issue.message.includes('must declare a default choice'))).toBe(true);
+  });
+
+  it('rejects nested and malformed value-condition blocks while allowing sequential option and condition blocks', () => {
+    const sequential = parsePromptFile(
+      'prompts/sequential.md',
+      [
+        '---',
+        'id: sequential',
+        'title: Sequential',
+        'description: Sequential blocks',
+        'category: planning',
+        'variables:',
+        '  - name: delivery',
+        '    control: select',
+        '    default: conversation',
+        '    choices:',
+        '      - id: conversation',
+        '      - id: report',
+        'options:',
+        '  - id: validation',
+        '---',
+        '{{#when delivery conversation}}Inline.{{/when}}',
+        '{{#option validation}}Validate.{{/option}}',
+        '{{#allOptionsDisabled}}No extra validation.{{/allOptionsDisabled}}'
+      ].join('\n')
+    );
+    const nested = parsePromptFile(
+      'prompts/nested.md',
+      [
+        '---',
+        'id: nested',
+        'title: Nested',
+        'description: Nested blocks',
+        'category: planning',
+        'variables:',
+        '  - name: delivery',
+        '    control: select',
+        '    default: conversation',
+        '    choices:',
+        '      - id: conversation',
+        '      - id: report',
+        '---',
+        '{{#when delivery conversation}}{{#when delivery report}}Nested{{/when}}{{/when}}'
+      ].join('\n')
+    );
+    const malformed = parsePromptFile(
+      'prompts/malformed.md',
+      '---\nid: malformed\ntitle: Malformed\ndescription: Malformed block\ncategory: planning\n---\n{{#when bad}}Broken{{/when}}'
+    );
+
+    expect(sequential.issues).toEqual([]);
+    expect(nested.issues.some((issue) => issue.message.includes('Nested conditional blocks are not supported'))).toBe(true);
+    expect(malformed.issues.some((issue) => issue.message.includes('Invalid condition block syntax'))).toBe(true);
   });
 
   it('validates option metadata and conditional block references', () => {
@@ -888,6 +1194,22 @@ function makePromptWithOptions(
 ): Prompt {
   return {
     ...makePrompt(template),
+    options
+  };
+}
+
+function makePromptWithControls(
+  template: string,
+  variables: Prompt['variables'],
+  options: PromptOption[] = []
+): Prompt {
+  return {
+    ...makePrompt(template),
+    variables: [
+      { name: 'name', label: 'Name', required: true },
+      { name: 'place', label: 'Place', required: true },
+      ...variables
+    ],
     options
   };
 }

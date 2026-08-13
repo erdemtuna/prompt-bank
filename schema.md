@@ -19,6 +19,15 @@ variables:
     description: What the caller should provide
     required: true
     default: Optional prefilled value
+  - name: workflow
+    label: Workflow
+    control: select
+    default: focused
+    choices:
+      - id: brief
+        label: Brief
+      - id: focused
+        label: Focused
 options:
   - id: frontendFocus
     label: Frontend focus
@@ -41,6 +50,12 @@ Prompt template body with {{variableName}} placeholders.
 - Every non-built-in placeholder in the body must be listed in `variables`.
 - Variables may include `default` or `defaultValue`. Defaults prefill the composer and are copied into the rendered prompt unless the user edits them.
 - Use defaults for stable, repeated operator values such as `current repository`, `main`, `current branch`, or standard validation guidance. Do not default values that should force a real decision, such as issue content, PR comments, approval summaries, or the main investigation intent.
+- Variables may set `control` to `text`, `textarea`, `select`, or `slider`. Omitting `control` preserves the existing automatic text-versus-textarea choice.
+- `select` is for one mutually exclusive value. `slider` is for one value from an ordered scale. Both require at least two `choices` and a `default` that matches one choice id.
+- Each choice requires an `id` and may include `label` and `value`. The id controls conditions. Direct `{{variableName}}` interpolation copies `value` when present, otherwise `label`; it never copies the internal id accidentally.
+- Choice ids use variable-name syntax: start with a letter or underscore, then contain only letters, numbers, and underscores.
+- Use `{{#when variableName choiceId}}...{{/when}}` for text that belongs to one selected value.
+- A variable referenced only by a `{{#when}}` condition still appears in the composer. Required inputs and model placeholders inside inactive value blocks do not block copying.
 - Prompts may include `options`, an array of optional focus toggles. Each option object must include `id` and `label`, and may include `description` and a boolean `default` or `defaultEnabled`.
 - Option IDs use variable-name syntax: start with a letter or underscore, then contain only letters, numbers, and underscores. Prefer descriptive camelCase IDs such as `frontendFocus`, `backendFocus`, or `crossTopicConcerns`.
 - Options are enabled by default when `default` and `defaultEnabled` are omitted.
@@ -48,7 +63,7 @@ Prompt template body with {{variableName}} placeholders.
 - Use `{{#allOptionsDisabled}}...{{/allOptionsDisabled}}` for prompt-specific fallback text when every option declared on that prompt is disabled.
 - Disabled option blocks are omitted from the copied prompt. They do not add instructions to avoid or deprioritize that topic.
 - Keep mandatory safety, quality, and workflow instructions outside optional blocks.
-- Conditional blocks must be self-contained. Nested conditional blocks are not supported.
+- Conditional blocks must be self-contained. Nested option, all-options-disabled, or value-condition blocks are not supported.
 - `{{model}}` is a built-in placeholder populated from the selected general model preset.
 - `{{rubberDuckModel}}` is a built-in placeholder populated from the selected alternative model preset for rubber-duck or reviewer agents.
 - Built-in placeholder names are reserved. Do not declare prompt variables named `model` or `rubberDuckModel`.
@@ -56,9 +71,68 @@ Prompt template body with {{variableName}} placeholders.
 - Preserve operational instructions as text. Do not remove or soften workflow, gate, agent, tool, or model-call wording when that wording is intended for whoever receives the copied prompt.
 - Do not add schema fields that imply Prompt Bank executes prompts, starts workflows, evaluates gates, invokes agents, or calls models.
 
+## Typed controls and value blocks
+
+Use a select when the choices are mutually exclusive:
+
+```markdown
+---
+id: execution-example
+title: Execution Example
+category: planning
+description: Demonstrates one execution target
+variables:
+  - name: executionTarget
+    label: Approved plan execution
+    control: select
+    default: nativeSubagents
+    choices:
+      - id: currentSession
+        label: Current session
+      - id: nativeSubagents
+        label: Native subagents
+      - id: independentSessions
+        label: Independent sessions
+        value: separate Copilot CLI sessions
+---
+
+{{#when executionTarget currentSession}}
+Design the approved work for this session.
+{{/when}}
+{{#when executionTarget nativeSubagents}}
+Design the approved work for native subagents.
+{{/when}}
+{{#when executionTarget independentSessions}}
+Design the approved work for independent sessions.
+{{/when}}
+
+Execution target: {{executionTarget}}.
+```
+
+The condition compares the stored choice id. The final interpolation above copies `separate Copilot CLI sessions` for `independentSessions`, because that choice supplies `value`.
+
+Use a slider for a small ordered scale:
+
+```yaml
+variables:
+  - name: depth
+    label: Analysis depth
+    control: slider
+    default: focused
+    choices:
+      - id: brief
+        label: Brief
+      - id: focused
+        label: Focused
+      - id: deep
+        label: Deep
+```
+
+The slider moves through the choices in declaration order. It is not a free numeric range.
+
 ## Optional focus blocks
 
-Use options for prompt-specific focus areas that can be included or omitted at copy time without changing the underlying template. Optional blocks should add useful guidance when enabled, but the prompt must remain valid when any or all options are disabled.
+Use options for independent, additive focus areas that can be included or omitted at copy time. Do not use multiple options to imitate a radio group; use a select variable instead. Optional blocks should add useful guidance when enabled, but the prompt must remain valid when any or all options are disabled.
 
 ```markdown
 ---
@@ -127,7 +201,7 @@ Use `gpt-5-6-sol` by default. Choose a different preset only when the prompt cle
 
 Model presets live in `model-presets.yaml` and are descriptive copy guidance only. They label the copied prompt text for the user; they are not routing, provider, or execution configuration.
 
-A preset may declare `contexts` and `reasoning`, each a list of variants with a kebab-case `id` and a `label`. When a preset declares them, the composer shows a context and a reasoning dropdown next to that model, and the copied text becomes the model label, the context label, and the reasoning label joined by spaces. A variant with an empty label contributes nothing, which keeps the common case short. Use `default_context` and `default_reasoning` to preselect a variant; without them the first entry wins.
+A preset may declare `contexts` and `reasoning`, each a list of variants with a kebab-case `id` and a `label`. The composer shows context as a dropdown and ordered reasoning variants as a slider. The copied text becomes the model label, context label, and reasoning label joined by spaces. Use `default_context` and `default_reasoning` to preselect a variant; without them the first entry wins.
 
 ```yaml
 presets:
@@ -138,8 +212,16 @@ presets:
         label: ""
       - id: 1m
         label: 1M context
-    default_reasoning: xhigh
+    default_reasoning: medium
     reasoning:
+      - id: none
+        label: no reasoning
+      - id: minimal
+        label: minimal reasoning
+      - id: low
+        label: low reasoning
+      - id: medium
+        label: medium reasoning
       - id: high
         label: high reasoning
       - id: xhigh
@@ -148,6 +230,6 @@ presets:
         label: max reasoning
 ```
 
-Selecting the 1M context and extra high reasoning above copies `GPT-5.6 Terra 1M context extra high reasoning`, while the standard context copies `GPT-5.6 Terra extra high reasoning`. Presets that declare neither list keep working as a plain label with no extra dropdowns.
+Selecting the 1M context and extra high reasoning above copies `GPT-5.6 Terra 1M context extra high reasoning`, while the default selection copies `GPT-5.6 Terra 1M context medium reasoning`. Presets that declare neither list keep working as a plain label with no extra controls.
 
 Do not add provider routing, API configuration, temperature, or execution metadata to model presets.

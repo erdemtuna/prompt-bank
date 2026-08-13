@@ -5,6 +5,8 @@ for (const width of [320, 390, 768, 1440]) {
     await page.setViewportSize({ width, height: 900 });
     await page.goto('/');
     await expect(page.getByRole('button', { name: 'Review a Pull Request' })).toBeVisible();
+    await page.getByRole('button', { name: 'Investigate a Topic' }).click();
+    await expect(page.getByRole('slider', { name: 'Analysis depth' })).toBeVisible();
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
     expect(overflow, `horizontal overflow of ${overflow}px at ${width}px`).toBeLessThanOrEqual(1);
   });

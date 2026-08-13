@@ -7,8 +7,16 @@ presets:
         label: ""
       - id: 1m
         label: 1M context
-    default_reasoning: xhigh
+    default_reasoning: medium
     reasoning:
+      - id: none
+        label: no reasoning
+      - id: minimal
+        label: minimal reasoning
+      - id: low
+        label: low reasoning
+      - id: medium
+        label: medium reasoning
       - id: high
         label: high reasoning
       - id: xhigh
@@ -23,8 +31,16 @@ presets:
         label: ""
       - id: 1m
         label: 1M context
-    default_reasoning: xhigh
+    default_reasoning: medium
     reasoning:
+      - id: none
+        label: no reasoning
+      - id: minimal
+        label: minimal reasoning
+      - id: low
+        label: low reasoning
+      - id: medium
+        label: medium reasoning
       - id: high
         label: high reasoning
       - id: xhigh
@@ -39,8 +55,16 @@ presets:
         label: ""
       - id: 1m
         label: 1M context
-    default_reasoning: xhigh
+    default_reasoning: medium
     reasoning:
+      - id: none
+        label: no reasoning
+      - id: minimal
+        label: minimal reasoning
+      - id: low
+        label: low reasoning
+      - id: medium
+        label: medium reasoning
       - id: high
         label: high reasoning
       - id: xhigh
@@ -55,8 +79,16 @@ presets:
         label: ""
       - id: 1m
         label: 1M context
-    default_reasoning: xhigh
+    default_reasoning: medium
     reasoning:
+      - id: none
+        label: no reasoning
+      - id: minimal
+        label: minimal reasoning
+      - id: low
+        label: low reasoning
+      - id: medium
+        label: medium reasoning
       - id: high
         label: high reasoning
       - id: xhigh
