@@ -4,11 +4,11 @@ title: Investigate a Topic
 category: exploration
 description: Investigate a question or an area of a codebase deeply before deciding what to build.
 model_default: gpt-5-6-sol
+model_roles:
+  model:
+    label: Investigation model
+    description: Used by parallel investigation agents.
 variables:
-  - name: intent
-    description: The question, topic, or outcome to investigate
-    required: false
-    default: Use the current conversation, prior analysis, and repository state.
   - name: purpose
     label: Purpose
     description: The decision this investigation should support
@@ -21,6 +21,22 @@ variables:
         label: Brainstorm
       - id: technicalDesign
         label: Technical design
+  - name: technicalScope
+    label: Technical scope
+    description: The affected technical surface when the purpose is technical design
+    control: select
+    default: infer
+    visible_when:
+      purpose: [technicalDesign]
+    choices:
+      - id: infer
+        label: Infer
+      - id: frontend
+        label: Frontend
+      - id: backend
+        label: Backend
+      - id: fullStack
+        label: Full-stack
   - name: analysisDepth
     label: Analysis depth
     description: How broadly and deeply to investigate before returning
@@ -33,10 +49,46 @@ variables:
         label: Focused
       - id: deep
         label: Deep
+  - name: intent
+    description: The question, topic, or outcome to investigate
+    required: false
+    default: Use the current conversation, prior analysis, and repository state.
 options:
   - id: parallelAgents
     label: Parallel agents
     description: Split the investigation across agents working on separate threads.
+  - id: uiMockups
+    label: UI mockups
+    description: Include mockups for important interface states.
+    default: false
+    visible_when:
+      purpose: [technicalDesign]
+    enabled_when:
+      technicalScope: [frontend, fullStack]
+  - id: stateDiagram
+    label: State diagram
+    description: Show meaningful states and transitions.
+    default: false
+    visible_when:
+      purpose: [technicalDesign]
+  - id: sequenceDiagram
+    label: Sequence diagram
+    description: Show the order of interactions across participants.
+    default: false
+    visible_when:
+      purpose: [technicalDesign]
+  - id: useCaseActivityDiagram
+    label: Use-case or activity diagram
+    description: Show actors, decisions, and workflow paths.
+    default: false
+    visible_when:
+      purpose: [technicalDesign]
+  - id: apiDataFlowDiagram
+    label: API or data-flow diagram
+    description: Show contracts and movement of data across boundaries.
+    default: false
+    visible_when:
+      purpose: [technicalDesign]
 ---
 
 Investigate the topic below.
@@ -57,24 +109,53 @@ Ground every claim in something you actually read. When you state how the system
 {{/when}}
 
 {{#option parallelAgents}}
-- Parallel agents: split the investigation into genuinely independent threads and give each one to a {{model}} agent with its own brief. Write each brief so it stands alone, naming the repository, the exact scope, and what to report back. Use them for deep or independent threads, not for simple lookups. Synthesize the results yourself, and tell me plainly if a thread came back empty or contradicted another.
+- Parallel agents: split the investigation into genuinely independent threads and give each one to a {{model}} agent with a standalone brief. Name the repository, exact scope, and expected report. Use parallel work for deep or independent threads, not simple lookups. Synthesize the results and report empty or contradictory threads plainly.
 {{/option}}
-{{#allOptionsDisabled}}
-- Parallelism: investigate directly in the current session without splitting the work into agent threads.
-{{/allOptionsDisabled}}
 
 {{#when purpose general}}
 - Purpose: report what you found, what it means, and the strongest next step without forcing the result into brainstorming or a build design.
 {{/when}}
 {{#when purpose brainstorm}}
-- Brainstorm: map the option space, including directions I did not ask about. Keep the promising ones open rather than narrowing to one. For each, give the tradeoff that actually decides it. Close by asking which to pursue, which to park, and which to drop.
+- Brainstorm: map the option space, including non-obvious directions. Keep promising paths open rather than narrowing to one. For each, give the tradeoff that actually decides it. Close with a short pursue, park, or drop decision set.
 {{/when}}
+{{#when purpose technicalDesign technicalScope infer}}
+- Design scope — infer: determine the affected technical surface from inspected evidence. State the inferred boundaries and assumptions before describing the strongest design direction.
+{{/when}}
+{{#when purpose technicalDesign technicalScope frontend}}
+- Design scope — frontend: cover interaction states, component boundaries, client-side state, accessibility, responsiveness, and integration points with existing services.
+{{/when}}
+{{#when purpose technicalDesign technicalScope backend}}
+- Design scope — backend: cover APIs, domain state, persistence, failure handling, security boundaries, observability, and relevant data flows.
+{{/when}}
+{{#when purpose technicalDesign technicalScope fullStack}}
+- Design scope — full-stack: cover frontend and backend responsibilities, contract ownership, shared state, end-to-end integration, failure boundaries, and delivery sequencing.
+{{/when}}
+
+{{#option uiMockups}}
+- UI mockups: include low-fidelity mockups for the important default, loading, empty, error, and narrow-width states. Keep them tied to the proposed interaction rather than visual polish.
+{{/option}}
+{{#option stateDiagram}}
+- State diagram: include a diagram of meaningful states, transitions, guards, and failure or recovery paths.
+{{/option}}
+{{#option sequenceDiagram}}
+- Sequence diagram: include a diagram showing participant ownership, call order, asynchronous boundaries, and failure responses.
+{{/option}}
+{{#option useCaseActivityDiagram}}
+- Use-case or activity diagram: include a diagram showing actors, decisions, alternate paths, and completion conditions.
+{{/option}}
+{{#option apiDataFlowDiagram}}
+- API or data-flow diagram: include a diagram showing contracts, trust boundaries, transformations, storage, and movement of data.
+{{/option}}
+{{#allOptionsDisabled}}
+- Optional focus: work directly in the current session and return the requested result without additional optional sections.
+{{/allOptionsDisabled}}
+
 {{#when purpose technicalDesign}}
-- Design: present the architecture and technical design of the strongest direction, how it fits the existing system, and what it would take to build. Include a diagram where one carries the structure better than prose. Close by asking whether to build it, partially build it, or drop it.
+- Design outcome: explain how the strongest direction fits the existing system, what it would take to build, and whether to proceed, narrow the scope, or stop.
 {{/when}}
 
 Be clear about three separate things: what you found, what you infer from it, and what you recommend. Do not blur them together.
 
-Surface every open question to me with enough context to decide on it. Then stop.
+Surface every open question with enough context for a decision. Then stop.
 
-Do not implement anything unless I explicitly ask.
+Do not implement anything unless implementation is explicitly requested.

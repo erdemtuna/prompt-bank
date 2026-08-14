@@ -27,6 +27,7 @@ Prefer to build it yourself? See [Building the desktop app](#building-the-deskto
 ## Why Prompt Bank
 
 - Composable. Declare text inputs, dropdowns, ordered sliders, optional focus toggles, and model preset labels, and the composed text updates live as you fill them in.
+- Scope aware. Show, hide, or disable controls from other workflow choices, combine value conditions, and label model guidance by its prompt-specific role.
 - Structured. Prompts are Markdown with a small, checked schema, so a malformed prompt is caught before you rely on it.
 - Yours to keep. Plain files you can diff, grep, and commit next to the code they belong to. No account, no proprietary format, nothing to migrate later.
 - Together in one place. A personal global set and any project folder you open appear alongside the built in prompts, each with a source label.
@@ -129,9 +130,13 @@ Write a short note about {{topic}}.
 
 The example prompts under `prompts/` are the built in set and a starting point. See the authoring guide in `docs/authoring.md` and the full contract in `schema.md`. Run `npm run validate` to check the built in set.
 
+Selects and sliders appear first as Workflow, followed by Focus areas, active Model guidance, free-form Context, and the raw template. Authors can use `visible_when` to remove irrelevant controls, `enabled_when` to keep an unavailable option visible, compound `{{#when}}` conditions for coordinated choices, and `model_roles` to explain who a model label is intended for. Hidden paths are inactive during composition, and unavailable options are effectively off.
+
+These fields only shape the text that is previewed and copied. Model roles and workflow wording are descriptive metadata, not execution or model-routing configuration.
+
 ## How it works
 
-Prompt Bank is a React and Vite interface inside a Tauri desktop window. The built in prompts are bundled with the app. Your global and folder prompts are read at runtime by a small Rust core, over in process messages rather than a network, and are not written into the app bundle. The folder picker and every private file read happen in Rust; the reader only reads Markdown directly inside a `.prompt-bank` directory, rejects symlinks, and caps how much it will read. The composer substitutes your inputs into the template, applies the enabled focus blocks, and copies the result to your clipboard. There is no backend and no telemetry, so your prompt content leaves the app only through the clipboard copy that you trigger.
+Prompt Bank is a React and Vite interface inside a Tauri desktop window. The built in prompts are bundled with the app. Your global and folder prompts are read at runtime by a small Rust core, over in process messages rather than a network, and are not written into the app bundle. The folder picker and every private file read happen in Rust; the reader only reads Markdown directly inside a `.prompt-bank` directory, rejects symlinks, and caps how much it will read. The composer evaluates control applicability, substitutes active inputs into the template, applies enabled focus blocks, and copies the result to your clipboard. It does not run the prompt, invoke its named agents, or call its model roles. There is no backend and no telemetry, so your prompt content leaves the app only through the clipboard copy that you trigger.
 
 ## Building the desktop app
 

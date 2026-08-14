@@ -96,7 +96,58 @@ Create an HTML report and return its path.
 {{/when}}
 ```
 
-Do not nest conditional blocks. Use checkboxes only when several independent sections may be included together.
+A `{{#when}}` tag may contain several variable-choice pairs. Every pair must match:
+
+```markdown
+{{#when purpose technicalDesign technicalScope frontend}}
+Describe frontend interaction states and component boundaries.
+{{/when}}
+```
+
+That is an AND condition. For OR behavior, repeat separate blocks with the same content. Do not nest conditional blocks. Use checkboxes only when several independent sections may be included together.
+
+## Conditional controls
+
+Add `visible_when` when a variable or option is irrelevant outside another selection. Add `enabled_when` when an option should remain visible but unavailable:
+
+```yaml
+variables:
+  - name: purpose
+    label: Purpose
+    control: select
+    default: general
+    choices:
+      - id: general
+        label: General analysis
+      - id: technicalDesign
+        label: Technical design
+  - name: technicalScope
+    label: Technical scope
+    control: select
+    default: infer
+    visible_when:
+      purpose: [technicalDesign]
+    choices:
+      - id: infer
+        label: Infer
+      - id: frontend
+        label: Frontend
+      - id: backend
+        label: Backend
+      - id: fullStack
+        label: Full-stack
+options:
+  - id: uiMockups
+    label: UI mockups
+    visible_when:
+      purpose: [technicalDesign]
+    enabled_when:
+      technicalScope: [frontend, fullStack]
+```
+
+Predicate keys are ANDed; values in one array are alternatives. References must name declared select or slider variables and declared choices. A control cannot refer to itself, and applicability dependencies cannot form a cycle. When both predicates exist, visibility is evaluated first.
+
+Hidden select and slider controls keep their stored selection for later restoration. Variables that fail `enabled_when` also keep their value while remaining visible and disabled. Both states are inactive: any `{{#when}}` block that references one evaluates false. Hidden or disabled options are effectively false and their stale checked state is cleared. Re-enabling an option does not silently check it again. Required inputs and model placeholders inside inactive paths do not block copying.
 
 ## Optional focus blocks
 
@@ -134,15 +185,17 @@ Do a general review across correctness and security.
 {{/allOptionsDisabled}}
 ```
 
-Disabled option blocks are left out of the copied text. They do not add instructions to avoid a topic. Keep mandatory guidance outside optional blocks, and do not nest conditional blocks.
+Hidden and disabled option blocks are left out of the copied text. They do not add instructions to avoid a topic. The `{{#allOptionsDisabled}}` fallback considers only visible options: it renders when at least one option is visible and every visible option is effectively false. It does not render when no option is visible. Keep mandatory guidance outside optional blocks, and do not nest conditional blocks.
 
 A conditional block tag that sits on its own line is treated as a control line and removed cleanly, so stacked blocks read as a tight list and a disabled block leaves no gap behind. Spacing follows your own blank lines: put a blank line between two blocks in the template to keep a blank line between them when both are enabled. Line endings are normalized, so prompts render the same on Windows, macOS, and Linux.
 
-## Model preset labels
+## Model roles and preset labels
 
 Two built in placeholders insert a descriptive model label chosen in the interface. Use `{{model}}` for the general model and `{{rubberDuckModel}}` for an alternative or reviewer model. Do not declare variables named `model` or `rubberDuckModel`. Set `model_default` to a preset id from `model-presets.yaml` to preselect one.
 
 When a preset declares `contexts` or `reasoning`, the interface shows a context dropdown and a reasoning slider beside that model and folds the choices into the same placeholder, so a prompt written as `{{model}}` can copy as `GPT-5.6 Terra 1M context medium reasoning` without any change to the template. See `schema.md` for the preset format.
+
+Use `model_roles` to explain what each active placeholder means for this prompt:
 
 ```markdown
 ---
@@ -151,16 +204,35 @@ title: Plan Example
 category: planning
 description: Demonstrates the model placeholder
 model_default: gpt-5-6-sol
+model_roles:
+  model:
+    label: Approved execution model
+    description: Used by approved implementation workers.
+  rubberDuckModel:
+    label: Planning and review model
+    description: Used to critique the plan and review execution waves.
 variables:
   - name: goal
     description: The goal to plan for
     required: true
 ---
 
-Plan for {{goal}}. Design it for {{model}} to execute.
+Plan for {{goal}}. Design it for {{model}} to execute, then have {{rubberDuckModel}} critique the plan.
 ```
 
-The labels are copy guidance only. Prompt Bank never calls a model.
+Only the `model` and `rubberDuckModel` role keys are supported, and each needs a label and description. Role metadata changes the model-card presentation only. Preset labels and roles are copy guidance; Prompt Bank never calls a model or routes work.
+
+## Composer order
+
+The composer groups visible controls in this order:
+
+1. **Workflow** — selects and sliders.
+2. **Focus areas** — additive options, including visible disabled options with an availability explanation.
+3. **Model guidance** — active model roles, with model, context, and reasoning together.
+4. **Context** — text and textarea inputs.
+5. **Raw template**.
+
+The ordering helps authors understand the composed text. It does not execute any workflow.
 
 ## Command snippets
 
@@ -197,7 +269,9 @@ Common errors it catches:
 - A malformed placeholder such as `{{bad-name}}` or `{{ }}`.
 - A duplicate `id` or a duplicate variable name.
 - A select or slider with missing choices, an invalid default, or an unknown `{{#when}}` value.
+- An invalid compound condition or an unknown, cyclic, or self-referential applicability predicate.
 - A prompt that declares options but has no `{{#allOptionsDisabled}}` fallback.
+- Incomplete or unsupported `model_roles` metadata.
 - A `model_default` that does not match a preset id.
 
 Keep prompts generic. Do not include personal, employer, or proprietary content.
