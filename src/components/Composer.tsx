@@ -9,6 +9,8 @@ const useStyles = makeStyles({
   panel: {
     display: 'grid',
     gap: '22px',
+    containerName: 'composer-panel',
+    containerType: 'inline-size',
     '@media (min-width: 1101px)': {
       display: 'flex',
       flexDirection: 'column',
@@ -59,8 +61,8 @@ const useStyles = makeStyles({
   },
   workspace: {
     display: 'grid',
-    gridTemplateColumns: 'minmax(0, 1fr) minmax(390px, 440px)',
-    gap: '34px',
+    gridTemplateColumns: 'minmax(0, 1fr) clamp(340px, 27vw, 380px)',
+    gap: '28px',
     alignItems: 'start',
     borderTop: '1px solid var(--sw-rule)',
     paddingTop: '20px',
@@ -72,6 +74,12 @@ const useStyles = makeStyles({
     '@media (max-width: 1100px)': {
       gridTemplateColumns: '1fr',
       gap: '28px'
+    },
+    '@container (max-width: 707px)': {
+      gridTemplateColumns: '1fr',
+      alignItems: 'start',
+      overflowX: 'hidden',
+      overflowY: 'auto'
     }
   },
   previewColumn: {
@@ -82,6 +90,10 @@ const useStyles = makeStyles({
       display: 'flex',
       flexDirection: 'column',
       minHeight: 0
+    },
+    '@container (max-width: 707px)': {
+      display: 'grid',
+      minHeight: 'auto'
     }
   },
   actions: {
@@ -166,6 +178,11 @@ const useStyles = makeStyles({
       minHeight: 0,
       display: 'flex',
       flexDirection: 'column'
+    },
+    '@container (max-width: 707px)': {
+      display: 'grid',
+      flex: 'initial',
+      minHeight: 'auto'
     }
   },
   previewHeader: {
@@ -215,6 +232,11 @@ const useStyles = makeStyles({
       flex: 1,
       minHeight: 0,
       maxHeight: 'none'
+    },
+    '@container (max-width: 707px)': {
+      flex: 'initial',
+      minHeight: 'clamp(260px, 46vh, 560px)',
+      maxHeight: 'min(70vh, 720px)'
     }
   },
   rail: {
@@ -229,6 +251,12 @@ const useStyles = makeStyles({
       overflowX: 'hidden',
       paddingRight: '4px',
       paddingBottom: '8px'
+    },
+    '@container (max-width: 707px)': {
+      minHeight: 'auto',
+      overflow: 'visible',
+      paddingRight: 0,
+      paddingBottom: 0
     }
   },
   section: {
@@ -339,7 +367,10 @@ const useStyles = makeStyles({
     '@media (max-width: 640px)': {
       gridTemplateColumns: '1fr'
     },
-    '@container (max-width: 410px)': {
+    '@container (max-width: 350px)': {
+      gridTemplateColumns: '1fr'
+    },
+    '@container composer-panel (max-width: 707px)': {
       gridTemplateColumns: '1fr'
     }
   },
@@ -369,10 +400,14 @@ const useStyles = makeStyles({
   },
   modelGrid: {
     display: 'grid',
-    gridTemplateColumns: 'minmax(130px, 1.2fr) minmax(82px, 0.75fr) minmax(125px, 1fr)',
-    gap: '12px',
+    gridTemplateColumns: 'minmax(112px, 1.2fr) minmax(72px, 0.75fr) minmax(104px, 1fr)',
+    gap: '8px',
     alignItems: 'end',
     '@media (max-width: 640px)': {
+      gridTemplateColumns: '1fr',
+      alignItems: 'stretch'
+    },
+    '@container (max-width: 303px)': {
       gridTemplateColumns: '1fr',
       alignItems: 'stretch'
     }

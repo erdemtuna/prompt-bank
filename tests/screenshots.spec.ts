@@ -21,8 +21,8 @@ test('captures a wrapped option label in the constrained desktop rail', async ({
   await page.setViewportSize({ width: 1101, height: 900 });
   await page.goto(composerFixture);
   await page.locator('#root').evaluate((root) => {
-    root.style.width = '720px';
-    root.style.maxWidth = '720px';
+    root.style.width = '756px';
+    root.style.maxWidth = '756px';
   });
   await page.evaluate(fontsReady);
   await expect(page).toHaveScreenshot('composer-wave1a-constrained-wrapped-option.png', { animations: 'disabled', fullPage: true });
