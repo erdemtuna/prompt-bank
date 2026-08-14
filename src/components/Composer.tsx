@@ -597,14 +597,22 @@ function ModelGroup({
   onContextChange,
   onReasoningChange
 }: ModelGroupProps) {
+  const roleLabelId = useId();
+  const roleDescriptionId = useId();
   const contexts = preset?.contexts ?? [];
   const reasoning = preset?.reasoning ?? [];
 
   return (
-    <div className={styles.modelCard} data-model-card>
+    <div
+      className={styles.modelCard}
+      data-model-card
+      role="group"
+      aria-labelledby={roleLabelId}
+      aria-describedby={roleDescription ? roleDescriptionId : undefined}
+    >
       <div className={styles.modelHeader}>
-        <strong className={styles.modelRole}>{roleLabel}</strong>
-        <span className={styles.modelDescription}>{roleDescription}</span>
+        <strong id={roleLabelId} className={styles.modelRole}>{roleLabel}</strong>
+        <span id={roleDescriptionId} className={styles.modelDescription}>{roleDescription}</span>
       </div>
       <div className={styles.modelGrid}>
         <div className={styles.variantField} data-model-field="model">
@@ -919,7 +927,7 @@ export function Composer({ prompt, presets, issues }: Props) {
 
         <aside className={styles.rail} aria-label="Prompt inputs">
           {workflowVariables.length > 0 ? (
-            <section className={styles.section}>
+            <section className={styles.section} aria-label="Workflow">
               <span className={styles.eyebrow}>Workflow</span>
               <div className={styles.workflowFields}>
                 {workflowVariables.map((variable) => (
@@ -938,7 +946,7 @@ export function Composer({ prompt, presets, issues }: Props) {
           ) : null}
 
           {visibleOptions.length > 0 ? (
-            <section className={styles.section}>
+            <section className={styles.section} aria-label="Focus areas">
               <span className={styles.eyebrow}>Focus areas</span>
               <div className={styles.optionList}>
                 {visibleOptions.map((option) => {
@@ -960,7 +968,7 @@ export function Composer({ prompt, presets, issues }: Props) {
           ) : null}
 
           {usesModel || usesRubberDuck ? (
-            <section className={styles.section}>
+            <section className={styles.section} aria-label="Model guidance">
               <span className={styles.eyebrow}>Model guidance</span>
               <div className={styles.modelGroups}>
                 {usesModel ? (
@@ -1002,7 +1010,7 @@ export function Composer({ prompt, presets, issues }: Props) {
           ) : null}
 
           {contextVariables.length > 0 ? (
-            <section className={styles.section}>
+            <section className={styles.section} aria-label="Context">
               <span className={styles.eyebrow}>Context</span>
               <div className={styles.fields}>
                 {contextVariables.map((variable) => (

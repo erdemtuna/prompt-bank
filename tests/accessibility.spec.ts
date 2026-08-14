@@ -100,6 +100,22 @@ test('conditional Composer controls are accessible by keyboard and screen reader
   await expect(page.getByRole('checkbox', { name: 'UI mockups' })).toHaveCount(0);
 });
 
+test('Composer sections and model role cards expose programmatic names', async ({ page }) => {
+  await page.goto(composerFixture);
+
+  for (const name of ['Workflow', 'Focus areas', 'Model guidance', 'Context']) {
+    await expect(page.getByRole('region', { name, exact: true })).toBeVisible();
+  }
+
+  const executionGroup = page.getByRole('group', { name: 'Approved execution model', exact: true });
+  await expect(executionGroup).toBeVisible();
+  await expect(executionGroup).toHaveAccessibleDescription('Used by approved implementation workers.');
+
+  const reviewGroup = page.getByRole('group', { name: 'Planning and review model', exact: true });
+  await expect(reviewGroup).toBeVisible();
+  await expect(reviewGroup).toHaveAccessibleDescription('Used by reviewers that critique execution waves.');
+});
+
 test('conditional and disabled Composer states have no serious or critical violations', async ({ page }) => {
   await page.goto(composerFixture);
   await page.getByLabel('Technical scope').selectOption('backend');

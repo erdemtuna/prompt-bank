@@ -128,8 +128,8 @@ test('both model selectors insert the chosen preset labels', async ({ page }) =>
   await page.getByRole('button', { name: 'Review a Pull Request' }).click();
   const preview = page.getByRole('region', { name: 'Composed prompt' });
 
-  await page.getByLabel('General model').selectOption('opus-5');
-  await page.getByLabel('Alternative model').selectOption('gpt-5-6-sol');
+  await page.getByRole('combobox', { name: 'General model', exact: true }).selectOption('opus-5');
+  await page.getByRole('combobox', { name: 'Alternative model', exact: true }).selectOption('gpt-5-6-sol');
   await expect(preview).toContainText(
     'Use Opus 5 1M context medium reasoning as the primary reviewer, and a set of GPT-5.6 Sol 1M context medium reasoning reviewers as independent second opinions.'
   );
@@ -139,7 +139,7 @@ test('context and reasoning selectors refine the composed model label', async ({
   await page.getByRole('button', { name: 'Review a Pull Request' }).click();
   const preview = page.getByRole('region', { name: 'Composed prompt' });
 
-  await page.getByLabel('General model').selectOption('gpt-5-6-terra');
+  await page.getByRole('combobox', { name: 'General model', exact: true }).selectOption('gpt-5-6-terra');
   await page.getByLabel('General context').selectOption('1m');
   const reasoning = page.getByRole('slider', { name: 'General reasoning' });
   await reasoning.press('End');
@@ -211,8 +211,8 @@ test.describe('Wave 2A composer fixture', () => {
 
   test('shows active prompt-specific model roles and preserves independent selections', async ({ page }) => {
     const preview = page.getByRole('region', { name: 'Composed prompt' });
-    const general = page.getByLabel('General model');
-    const alternative = page.getByLabel('Alternative model');
+    const general = page.getByRole('combobox', { name: 'General model', exact: true });
+    const alternative = page.getByRole('combobox', { name: 'Alternative model', exact: true });
     const executionCard = page.locator('[data-model-card]').filter({ hasText: 'Approved execution model' });
     const reviewCard = page.locator('[data-model-card]').filter({ hasText: 'Planning and review model' });
 
@@ -227,12 +227,12 @@ test.describe('Wave 2A composer fixture', () => {
     await expect(preview).toContainText('Use GPT-5.6 Sol 1M context high reasoning to review full-stack integration.');
 
     await page.getByLabel('Technical scope').selectOption('backend');
-    await expect(page.getByLabel('General model')).toHaveValue('opus-5');
-    await expect(page.getByLabel('Alternative model')).toHaveCount(0);
+    await expect(page.getByRole('combobox', { name: 'General model', exact: true })).toHaveValue('opus-5');
+    await expect(page.getByRole('combobox', { name: 'Alternative model', exact: true })).toHaveCount(0);
 
     await page.getByLabel('Technical scope').selectOption('fullStack');
-    await expect(page.getByLabel('General model')).toHaveValue('opus-5');
-    await expect(page.getByLabel('Alternative model')).toHaveValue('gpt-5-6-sol');
+    await expect(page.getByRole('combobox', { name: 'General model', exact: true })).toHaveValue('opus-5');
+    await expect(page.getByRole('combobox', { name: 'Alternative model', exact: true })).toHaveValue('gpt-5-6-sol');
 
     await page.getByLabel('Purpose').selectOption('general');
     await expect(page.getByText('Model guidance', { exact: true })).toHaveCount(0);
