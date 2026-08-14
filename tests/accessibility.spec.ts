@@ -33,7 +33,7 @@ test('a selected prompt with inputs and options has no serious or critical viola
 test('select and slider prompt controls have no serious or critical violations', async ({ page }) => {
   await page.goto('/');
   await page.getByRole('button', { name: 'Investigate a Topic' }).click();
-  await expect(page.getByLabel('Purpose')).toBeVisible();
+  await expect(page.getByLabel('Purpose', { exact: true })).toBeVisible();
   await expect(page.getByRole('slider', { name: 'Analysis depth' })).toBeVisible();
 
   const results = await new AxeBuilder({ page }).analyze();
