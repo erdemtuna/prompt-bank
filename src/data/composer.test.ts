@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { composeModelLabel, composePrompt, initialOptionValues, initialVariableValues, promptUsesModelPlaceholder, promptUsesRubberDuckModelPlaceholder } from './composer';
+import { composeModelLabel, composePrompt, initialOptionValues, initialVariableValues, normalizeOptionValues, promptUsesModelPlaceholder, promptUsesRubberDuckModelPlaceholder } from './composer';
 import { builtinPresetsRaw, builtinPromptSources, loadAppData, loadAppDataFromSources, resolvePromptsForApp } from './loaders';
-import { parseModelPresets, parsePromptFile, validatePromptCollection, type Prompt, type PromptIdentity, type PromptOption } from './schemas';
+import { extractConditionVariableNames, parseModelPresets, parsePromptFile, renderPromptTemplateConditions, renderPromptTemplateControls, validatePromptCollection, type Prompt, type PromptIdentity, type PromptOption } from './schemas';
 import { formatCount, shouldUseTextarea } from '../components/promptUi';
 
 describe('composer', () => {
@@ -417,6 +417,309 @@ describe('composer', () => {
     }
   });
 
+  it('renders compound conditions as AND and repeated blocks as OR', () => {
+    const prompt = makePromptWithControls(
+      [
+        '{{#when purpose technicalDesign technicalScope frontend}}Frontend design.{{/when}}',
+        '{{#when purpose technicalDesign technicalScope backend}}Backend design.{{/when}}',
+        '{{#when purpose technicalDesign technicalScope fullStack}}Full-stack design.{{/when}}'
+      ].join('\n'),
+      [
+        selectVariable('purpose', 'general', ['general', 'technicalDesign']),
+        selectVariable('technicalScope', 'frontend', ['frontend', 'backend', 'fullStack'])
+      ]
+    );
+
+    const frontend = composePrompt(prompt, {
+      name: 'work',
+      place: 'repo',
+      purpose: 'technicalDesign',
+      technicalScope: 'frontend'
+    });
+    const backend = composePrompt(prompt, {
+      name: 'work',
+      place: 'repo',
+      purpose: 'technicalDesign',
+      technicalScope: 'backend'
+    });
+    const general = composePrompt(prompt, {
+      name: 'work',
+      place: 'repo',
+      purpose: 'general',
+      technicalScope: 'frontend'
+    });
+
+    expect(frontend.text).toBe('Frontend design.');
+    expect(backend.text).toBe('Backend design.');
+    expect(general.text).toBe('');
+    expect(frontend.activeVariableNames).toEqual(['purpose', 'technicalScope']);
+  });
+
+  it('renders standalone compound tags cleanly on LF and CRLF', () => {
+    const source = [
+      'Guidance:',
+      '',
+      '{{#when purpose technicalDesign technicalScope backend}}',
+      '- Backend design.',
+      '{{/when}}',
+      '{{#when purpose technicalDesign technicalScope frontend}}',
+      '- Frontend design.',
+      '{{/when}}',
+      '',
+      'Stop.'
+    ].join('\n');
+
+    for (const template of [source, source.replace(/\n/g, '\r\n')]) {
+      const prompt = makePromptWithControls(template, [
+        selectVariable('purpose', 'technicalDesign', ['general', 'technicalDesign']),
+        selectVariable('technicalScope', 'backend', ['frontend', 'backend'])
+      ]);
+      const result = composePrompt(prompt, {
+        name: 'work',
+        place: 'repo',
+        purpose: 'technicalDesign',
+        technicalScope: 'backend'
+      });
+
+      expect(result.text).toBe('Guidance:\n\n- Backend design.\n\nStop.');
+      expect(result.text).not.toContain('\r');
+    }
+  });
+
+  it('suppresses compound branches and model requirements when a referenced control is hidden', () => {
+    const prompt = makePromptWithControls(
+      [
+        'General guidance.',
+        '{{#when purpose technicalDesign technicalScope backend}}Use {{model}} to write {{place}}.{{/when}}'
+      ].join('\n'),
+      [
+        selectVariable('purpose', 'general', ['general', 'technicalDesign']),
+        {
+          ...selectVariable('technicalScope', 'backend', ['frontend', 'backend']),
+          visibleWhen: { purpose: ['technicalDesign'] }
+        }
+      ]
+    );
+    const result = composePrompt(prompt, {
+      name: '',
+      place: '',
+      purpose: 'general',
+      technicalScope: 'backend'
+    });
+
+    expect(result.text).toBe('General guidance.');
+    expect(result.activeVariableNames).toEqual(['purpose']);
+    expect(result.missingBuiltIns).toEqual([]);
+    expect(result.missingRequired).toEqual([]);
+    expect(result.canCopy).toBe(true);
+  });
+
+  it.each(['select', 'slider'] as const)('suppresses conditions for visible disabled %s controls without clearing their value', (control) => {
+    const prompt = makePromptWithControls(
+      '{{#when technicalScope backend}}Use {{model}} for backend work.{{/when}}',
+      [
+        selectVariable('purpose', 'general', ['general', 'technicalDesign']),
+        {
+          name: 'technicalScope',
+          label: 'Technical scope',
+          required: true,
+          control,
+          defaultValue: 'backend',
+          choices: [
+            { id: 'frontend', label: 'frontend' },
+            { id: 'backend', label: 'backend' }
+          ],
+          enabledWhen: { purpose: ['technicalDesign'] }
+        }
+      ]
+    );
+    const storedValues = {
+      name: 'work',
+      place: 'repo',
+      purpose: 'general',
+      technicalScope: 'backend'
+    };
+
+    const disabled = composePrompt(prompt, storedValues);
+    const reenabled = composePrompt(prompt, { ...storedValues, purpose: 'technicalDesign' });
+
+    expect(disabled.applicability.variables.technicalScope).toEqual({ visible: true, enabled: false });
+    expect(disabled.text).toBe('');
+    expect(disabled.usesModelPlaceholder).toBe(false);
+    expect(disabled.missingBuiltIns).toEqual([]);
+    expect(reenabled.text).toBe('Use {{model}} for backend work.');
+    expect(reenabled.usesModelPlaceholder).toBe(true);
+    expect(reenabled.missingBuiltIns).toEqual(['model']);
+  });
+
+  it('does not require hidden or disabled variables and removes their direct placeholder values', () => {
+    const prompt = makePromptWithControls(
+      'Scope {{technicalScope}}. Hidden {{hiddenNotes}}. Disabled {{technicalNotes}}.',
+      [
+        selectVariable('purpose', 'general', ['general', 'technicalDesign']),
+        {
+          ...selectVariable('technicalScope', 'backend', ['frontend', 'backend']),
+          visibleWhen: { purpose: ['technicalDesign'] }
+        },
+        {
+          name: 'hiddenNotes',
+          label: 'Hidden notes',
+          required: true,
+          visibleWhen: { purpose: ['technicalDesign'] }
+        },
+        {
+          name: 'technicalNotes',
+          label: 'Technical notes',
+          required: true,
+          enabledWhen: { purpose: ['technicalDesign'] }
+        }
+      ]
+    );
+    const result = composePrompt(prompt, {
+      name: 'work',
+      place: 'repo',
+      purpose: 'general',
+      technicalScope: 'backend',
+      hiddenNotes: '',
+      technicalNotes: ''
+    });
+
+    expect(result.text).toBe('Scope . Hidden . Disabled .');
+    expect(result.activeVariableNames).toEqual(['purpose']);
+    expect(result.missingRequired).toEqual([]);
+    expect(result.canCopy).toBe(true);
+  });
+
+  it('normalizes hidden and disabled options to false without restoring stale state', () => {
+    const prompt = makePromptWithControls(
+      [
+        '{{#option uiMockups}}Create UI mockups.{{/option}}',
+        '{{#allOptionsDisabled}}No available artifact is selected.{{/allOptionsDisabled}}'
+      ].join('\n'),
+      [
+        selectVariable('purpose', 'technicalDesign', ['general', 'technicalDesign']),
+        selectVariable('technicalScope', 'frontend', ['frontend', 'backend'])
+      ],
+      [{
+        id: 'uiMockups',
+        label: 'UI mockups',
+        defaultEnabled: true,
+        visibleWhen: { purpose: ['technicalDesign'] },
+        enabledWhen: { technicalScope: ['frontend'] }
+      }]
+    );
+    const common = { name: 'work', place: 'repo', purpose: 'technicalDesign' };
+
+    const disabled = composePrompt(prompt, { ...common, technicalScope: 'backend' }, {}, {
+      optionValues: { uiMockups: true }
+    });
+    const cleared = normalizeOptionValues(prompt, { ...common, technicalScope: 'backend' }, { uiMockups: true });
+    const reenabled = normalizeOptionValues(prompt, { ...common, technicalScope: 'frontend' }, cleared);
+
+    expect(disabled.text).toBe('No available artifact is selected.');
+    expect(disabled.applicability.options.uiMockups).toEqual({ visible: true, enabled: false });
+    expect(disabled.effectiveOptionValues.uiMockups).toBe(false);
+    expect(cleared.uiMockups).toBe(false);
+    expect(reenabled.uiMockups).toBe(false);
+  });
+
+  it('applies visibility before enabled predicates and keeps applicability-only controls active', () => {
+    const prompt = makePromptWithControls(
+      [
+        '{{#option uiMockups}}Create UI mockups.{{/option}}',
+        '{{#allOptionsDisabled}}No available artifact is selected.{{/allOptionsDisabled}}'
+      ].join('\n'),
+      [
+        selectVariable('purpose', 'general', ['general', 'technicalDesign']),
+        selectVariable('technicalScope', 'backend', ['frontend', 'backend'])
+      ],
+      [{
+        id: 'uiMockups',
+        label: 'UI mockups',
+        defaultEnabled: true,
+        visibleWhen: { purpose: ['technicalDesign'] },
+        enabledWhen: { technicalScope: ['frontend'] }
+      }]
+    );
+
+    const hidden = composePrompt(prompt, {
+      name: 'work',
+      place: 'repo',
+      purpose: 'general',
+      technicalScope: 'frontend'
+    });
+    const disabled = composePrompt(prompt, {
+      name: 'work',
+      place: 'repo',
+      purpose: 'technicalDesign',
+      technicalScope: 'backend'
+    });
+
+    expect(hidden.applicability.options.uiMockups).toEqual({ visible: false, enabled: false });
+    expect(hidden.text).toBe('');
+    expect(hidden.activeVariableNames).toEqual(['purpose', 'technicalScope']);
+    expect(disabled.applicability.options.uiMockups).toEqual({ visible: true, enabled: false });
+    expect(disabled.text).toBe('No available artifact is selected.');
+  });
+
+  it('computes allOptionsDisabled from the non-empty set of visible options only', () => {
+    const prompt = makePromptWithControls(
+      [
+        '{{#option visibleArtifact}}Visible artifact.{{/option}}',
+        '{{#option hiddenArtifact}}Hidden artifact.{{/option}}',
+        '{{#allOptionsDisabled}}Visible fallback.{{/allOptionsDisabled}}'
+      ].join('\n'),
+      [selectVariable('purpose', 'technicalDesign', ['general', 'technicalDesign'])],
+      [
+        {
+          id: 'visibleArtifact',
+          label: 'Visible artifact',
+          defaultEnabled: false,
+          visibleWhen: { purpose: ['technicalDesign'] }
+        },
+        {
+          id: 'hiddenArtifact',
+          label: 'Hidden artifact',
+          defaultEnabled: true,
+          visibleWhen: { purpose: ['general'] }
+        }
+      ]
+    );
+
+    const oneVisibleOff = composePrompt(prompt, {
+      name: 'work',
+      place: 'repo',
+      purpose: 'technicalDesign'
+    });
+    const noneVisiblePrompt = {
+      ...prompt,
+      options: prompt.options.map((option) => ({ ...option, visibleWhen: { purpose: ['technicalDesign'] } }))
+    };
+    const noneVisible = composePrompt(noneVisiblePrompt, {
+      name: 'work',
+      place: 'repo',
+      purpose: 'general'
+    });
+
+    expect(oneVisibleOff.text).toBe('Visible fallback.');
+    expect(oneVisibleOff.effectiveOptionValues.hiddenArtifact).toBe(false);
+    expect(noneVisible.text).toBe('');
+  });
+
+  it('renders compound condition helpers with hidden-control suppression', () => {
+    const template = [
+      '{{#when purpose technicalDesign technicalScope backend}}Backend.{{/when}}',
+      '{{#when purpose technicalDesign technicalScope frontend}}Frontend.{{/when}}'
+    ].join('\n');
+    const values = { purpose: 'technicalDesign', technicalScope: 'backend' };
+
+    expect(extractConditionVariableNames(template)).toEqual(['purpose', 'technicalScope']);
+    expect(renderPromptTemplateConditions(template, values)).toBe('Backend.');
+    expect(renderPromptTemplateConditions(template, values, new Set(['technicalScope']))).toBe('');
+    expect(renderPromptTemplateControls(template, {}, false, values)).toBe('Backend.');
+    expect(renderPromptTemplateControls(template, {}, false, values, new Set(['technicalScope']))).toBe('');
+  });
+
   it('detects model placeholder usage from default-enabled option blocks only', () => {
     expect(promptUsesModelPlaceholder(makePromptWithOptions('{{#option frontendFocus}}Use {{model}}.{{/option}}'))).toBe(true);
     expect(promptUsesModelPlaceholder(makePromptWithOptions('{{#option backendFocus}}Use {{model}}.{{/option}}', [
@@ -476,6 +779,69 @@ describe('prompt validation', () => {
 
     expect(result.issues).toEqual([]);
     expect(result.prompt?.defaultModelId).toBe('gpt-5-5');
+  });
+
+  it('parses prompt-specific model roles as presentation-only metadata', () => {
+    const result = parsePromptFile(
+      'prompts/example.md',
+      [
+        '---',
+        'id: example',
+        'title: Example',
+        'description: Example prompt',
+        'category: planning',
+        'model_roles:',
+        '  model:',
+        '    label: Approved execution model',
+        '    description: Used by approved implementation workers.',
+        '  rubberDuckModel:',
+        '    label: Planning and review model',
+        '    description: Used to critique the plan and review execution waves.',
+        '---',
+        'Use {{model}} and {{rubberDuckModel}}.'
+      ].join('\n')
+    );
+
+    expect(result.issues).toEqual([]);
+    expect(result.prompt?.modelRoles).toEqual({
+      model: {
+        label: 'Approved execution model',
+        description: 'Used by approved implementation workers.'
+      },
+      rubberDuckModel: {
+        label: 'Planning and review model',
+        description: 'Used to critique the plan and review execution waves.'
+      }
+    });
+    expect(composePrompt(
+      { ...result.prompt!, source: 'builtin', sourceLabel: 'Built in', key: 'example' },
+      {},
+      { model: 'Execution', rubberDuckModel: 'Review' }
+    ).text).toBe('Use Execution and Review.');
+  });
+
+  it('rejects unsupported model role keys and incomplete metadata', () => {
+    const result = parsePromptFile(
+      'prompts/example.md',
+      [
+        '---',
+        'id: example',
+        'title: Example',
+        'description: Example prompt',
+        'category: planning',
+        'model_roles:',
+        '  otherModel:',
+        '    label: Other',
+        '    description: Used elsewhere.',
+        '  model:',
+        '    label: Execution',
+        '---',
+        'Use {{model}}.'
+      ].join('\n')
+    );
+
+    expect(result.issues.some((issue) => issue.message.includes('Unknown model role "otherModel"'))).toBe(true);
+    expect(result.issues.some((issue) => issue.message.includes('Model role "model" requires a non-empty description'))).toBe(true);
   });
 
   it('parses command prompt kind', () => {
@@ -631,6 +997,56 @@ describe('prompt validation', () => {
     }));
   });
 
+  it('normalizes variable and option visibility and enabled predicates', () => {
+    const result = parsePromptFile(
+      'prompts/example.md',
+      [
+        '---',
+        'id: example',
+        'title: Example',
+        'description: Example prompt',
+        'category: planning',
+        'variables:',
+        '  - name: purpose',
+        '    control: select',
+        '    default: general',
+        '    choices:',
+        '      - id: general',
+        '      - id: technicalDesign',
+        '  - name: technicalScope',
+        '    control: select',
+        '    default: frontend',
+        '    choices:',
+        '      - id: frontend',
+        '      - id: backend',
+        '    visible_when:',
+        '      purpose: [technicalDesign]',
+        '    enabled_when:',
+        '      purpose: [technicalDesign]',
+        'options:',
+        '  - id: uiMockups',
+        '    visible_when:',
+        '      purpose: [technicalDesign]',
+        '    enabled_when:',
+        '      technicalScope: [frontend]',
+        '---',
+        '{{#when purpose technicalDesign technicalScope frontend}}Frontend.{{/when}}',
+        '{{#option uiMockups}}Mockups.{{/option}}',
+        '{{#allOptionsDisabled}}Fallback.{{/allOptionsDisabled}}'
+      ].join('\n')
+    );
+
+    expect(result.issues).toEqual([]);
+    expect(result.prompt?.variables[1]).toEqual(expect.objectContaining({
+      visibleWhen: { purpose: ['technicalDesign'] },
+      enabledWhen: { purpose: ['technicalDesign'] }
+    }));
+    expect(result.prompt?.options[0]).toEqual(expect.objectContaining({
+      visibleWhen: { purpose: ['technicalDesign'] },
+      enabledWhen: { technicalScope: ['frontend'] }
+    }));
+  });
+
   it('validates typed-control choices, defaults, and condition references', () => {
     const result = parsePromptFile(
       'prompts/example.md',
@@ -660,6 +1076,157 @@ describe('prompt validation', () => {
     expect(result.issues.some((issue) => issue.message.includes('Unknown choice "unknown"'))).toBe(true);
     expect(result.issues.some((issue) => issue.message.includes('Condition variable "context" must use control'))).toBe(true);
     expect(result.issues.some((issue) => issue.message.includes('Unknown condition variable "undeclared"'))).toBe(true);
+  });
+
+  it('validates every pair in a compound condition and rejects incomplete pairs', () => {
+    const result = parsePromptFile(
+      'prompts/example.md',
+      [
+        '---',
+        'id: example',
+        'title: Example',
+        'description: Example prompt',
+        'category: planning',
+        'variables:',
+        '  - name: purpose',
+        '    control: select',
+        '    default: general',
+        '    choices:',
+        '      - id: general',
+        '      - id: technicalDesign',
+        '  - name: scope',
+        '    control: select',
+        '    default: frontend',
+        '    choices:',
+        '      - id: frontend',
+        '      - id: backend',
+        '---',
+        '{{#when purpose technicalDesign scope missing}}Unknown pair choice.{{/when}}',
+        '{{#when purpose technicalDesign scope}}Incomplete pair.{{/when}}'
+      ].join('\n')
+    );
+
+    expect(result.issues.some((issue) => issue.message.includes('Unknown choice "missing" for condition variable "scope"'))).toBe(true);
+    expect(result.issues.some((issue) => issue.message.includes('complete variable-choice pairs'))).toBe(true);
+  });
+
+  it('rejects condition directive prefix lookalikes', () => {
+    const result = parsePromptFile(
+      'prompts/example.md',
+      [
+        '---',
+        'id: example',
+        'title: Example',
+        'description: Example prompt',
+        'category: planning',
+        'variables:',
+        '  - name: purpose',
+        '    control: select',
+        '    default: general',
+        '    choices:',
+        '      - id: general',
+        '      - id: technicalDesign',
+        '---',
+        '{{#whenever purpose general}}Invalid prefix.{{/when}}'
+      ].join('\n')
+    );
+
+    expect(result.issues.some((issue) =>
+      issue.message.includes('Invalid condition block syntax "{{#whenever purpose general}}"')
+    )).toBe(true);
+  });
+
+  it('reports actionable applicability reference, control, and choice errors', () => {
+    const result = parsePromptFile(
+      'prompts/example.md',
+      [
+        '---',
+        'id: example',
+        'title: Example',
+        'description: Example prompt',
+        'category: planning',
+        'variables:',
+        '  - name: purpose',
+        '    control: select',
+        '    default: general',
+        '    choices:',
+        '      - id: general',
+        '      - id: technicalDesign',
+        '  - name: context',
+        '  - name: scoped',
+        '    visible_when:',
+        '      missing: [general]',
+        '    enabled_when:',
+        '      context: [general]',
+        'options:',
+        '  - id: artifact',
+        '    visible_when:',
+        '      purpose: [missingChoice]',
+        '---',
+        '{{#option artifact}}Artifact.{{/option}}',
+        '{{#allOptionsDisabled}}Fallback.{{/allOptionsDisabled}}'
+      ].join('\n')
+    );
+
+    expect(result.issues.some((issue) => issue.message.includes('Variable "scoped" visible_when references unknown variable "missing"'))).toBe(true);
+    expect(result.issues.some((issue) => issue.message.includes('Variable "scoped" enabled_when references variable "context", which must use control'))).toBe(true);
+    expect(result.issues.some((issue) => issue.message.includes('Option "artifact" visible_when references unknown choice "missingChoice" for variable "purpose"'))).toBe(true);
+  });
+
+  it('rejects self-referential and cyclic applicability', () => {
+    const self = parsePromptFile(
+      'prompts/self.md',
+      [
+        '---',
+        'id: self',
+        'title: Self',
+        'description: Self reference',
+        'category: planning',
+        'variables:',
+        '  - name: purpose',
+        '    control: select',
+        '    default: general',
+        '    choices:',
+        '      - id: general',
+        '      - id: technicalDesign',
+        '    visible_when:',
+        '      purpose: [technicalDesign]',
+        '---',
+        'Self.'
+      ].join('\n')
+    );
+    const cycle = parsePromptFile(
+      'prompts/cycle.md',
+      [
+        '---',
+        'id: cycle',
+        'title: Cycle',
+        'description: Cyclic reference',
+        'category: planning',
+        'variables:',
+        '  - name: purpose',
+        '    control: select',
+        '    default: general',
+        '    choices:',
+        '      - id: general',
+        '      - id: technicalDesign',
+        '    visible_when:',
+        '      scope: [frontend]',
+        '  - name: scope',
+        '    control: select',
+        '    default: frontend',
+        '    choices:',
+        '      - id: frontend',
+        '      - id: backend',
+        '    enabled_when:',
+        '      purpose: [technicalDesign]',
+        '---',
+        'Cycle.'
+      ].join('\n')
+    );
+
+    expect(self.issues.some((issue) => issue.message.includes('Variable "purpose" visible_when cannot reference itself'))).toBe(true);
+    expect(cycle.issues.some((issue) => issue.message.includes('Applicability cycle detected: "purpose" -> "scope" -> "purpose"'))).toBe(true);
   });
 
   it('requires typed controls to declare a valid default and at least two choices', () => {
@@ -736,6 +1303,39 @@ describe('prompt validation', () => {
     expect(sequential.issues).toEqual([]);
     expect(nested.issues.some((issue) => issue.message.includes('Nested conditional blocks are not supported'))).toBe(true);
     expect(malformed.issues.some((issue) => issue.message.includes('Invalid condition block syntax'))).toBe(true);
+  });
+
+  it('parses standalone compound condition tags with LF and CRLF', () => {
+    const source = [
+      '---',
+      'id: compound',
+      'title: Compound',
+      'description: Compound conditions',
+      'category: planning',
+      'variables:',
+      '  - name: purpose',
+      '    control: select',
+      '    default: technicalDesign',
+      '    choices:',
+      '      - id: general',
+      '      - id: technicalDesign',
+      '  - name: scope',
+      '    control: select',
+      '    default: backend',
+      '    choices:',
+      '      - id: frontend',
+      '      - id: backend',
+      '---',
+      '{{#when purpose technicalDesign scope backend}}',
+      'Backend.',
+      '{{/when}}'
+    ].join('\n');
+
+    for (const raw of [source, source.replace(/\n/g, '\r\n')]) {
+      const result = parsePromptFile('prompts/compound.md', raw);
+      expect(result.issues).toEqual([]);
+      expect(result.prompt?.template).not.toContain('\r');
+    }
   });
 
   it('validates option metadata and conditional block references', () => {
@@ -1211,5 +1811,16 @@ function makePromptWithControls(
       ...variables
     ],
     options
+  };
+}
+
+function selectVariable(name: string, defaultValue: string, choices: string[]): Prompt['variables'][number] {
+  return {
+    name,
+    label: name,
+    required: true,
+    control: 'select',
+    defaultValue,
+    choices: choices.map((id) => ({ id, label: id }))
   };
 }

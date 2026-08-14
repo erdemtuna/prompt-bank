@@ -11,6 +11,13 @@ export type ValidationIssue = {
   message: string;
 };
 
+export type ApplicabilityPredicate = Record<string, string[]>;
+
+export type ControlApplicability = {
+  visibleWhen?: ApplicabilityPredicate;
+  enabledWhen?: ApplicabilityPredicate;
+};
+
 export type PromptVariable = {
   name: string;
   label: string;
@@ -19,7 +26,7 @@ export type PromptVariable = {
   defaultValue?: string;
   control?: 'text' | 'textarea' | 'select' | 'slider';
   choices?: PromptChoice[];
-};
+} & ControlApplicability;
 
 export type PromptChoice = {
   id: string;
@@ -32,7 +39,16 @@ export type PromptOption = {
   label: string;
   description?: string;
   defaultEnabled: boolean;
+} & ControlApplicability;
+
+export type ModelRoleName = 'model' | 'rubberDuckModel';
+
+export type ModelRole = {
+  label: string;
+  description: string;
 };
+
+export type PromptModelRoles = Partial<Record<ModelRoleName, ModelRole>>;
 
 export type PromptSource = 'builtin' | 'global' | 'folder';
 
@@ -45,6 +61,7 @@ export type ParsedPrompt = {
   tags: string[];
   variables: PromptVariable[];
   options: PromptOption[];
+  modelRoles?: PromptModelRoles;
   defaultModelId?: string;
   template: string;
   path: string;
@@ -94,6 +111,7 @@ const frontmatterSchema = z.object({
   tags: z.union([z.array(z.string()), z.string()]).optional(),
   variables: z.unknown().optional(),
   options: z.unknown().optional(),
+  model_roles: z.unknown().optional(),
   model_default: z.string().optional(),
   defaultModel: z.string().optional(),
   modelDefault: z.string().optional(),
@@ -132,7 +150,9 @@ const variableObjectSchema = z.object({
   default: z.union([z.string(), z.number(), z.boolean()]).optional(),
   defaultValue: z.union([z.string(), z.number(), z.boolean()]).optional(),
   control: z.enum(['text', 'textarea', 'select', 'slider']).optional(),
-  choices: z.unknown().optional()
+  choices: z.unknown().optional(),
+  visible_when: z.unknown().optional(),
+  enabled_when: z.unknown().optional()
 }).passthrough();
 
 const choiceObjectSchema = z.object({
@@ -148,7 +168,9 @@ const optionObjectSchema = z.object({
   label: z.string().optional(),
   description: z.string().optional(),
   default: z.boolean().optional(),
-  defaultEnabled: z.boolean().optional()
+  defaultEnabled: z.boolean().optional(),
+  visible_when: z.unknown().optional(),
+  enabled_when: z.unknown().optional()
 }).passthrough();
 
 /** Normalize CRLF and lone CR line endings to LF so whitespace handling is platform independent. */
@@ -164,7 +186,7 @@ function normalizeLineEndings(text: string): string {
  */
 function stripStandaloneBlockTagLines(template: string): string {
   return template.replace(
-    /^[ \t]*(\{\{[ \t]*(?:#option[ \t]+[A-Za-z_][A-Za-z0-9_]*|\/option|#allOptionsDisabled|\/allOptionsDisabled|#when[ \t]+[A-Za-z_][A-Za-z0-9_]*[ \t]+[A-Za-z_][A-Za-z0-9_]*|\/when)[ \t]*\}\})[ \t]*(?:\n|$)/gm,
+    /^[ \t]*(\{\{[ \t]*(?:#option[ \t]+[A-Za-z_][A-Za-z0-9_]*|\/option|#allOptionsDisabled|\/allOptionsDisabled|#when(?:[ \t]+[A-Za-z_][A-Za-z0-9_]*)+|\/when)[ \t]*\}\})[ \t]*(?:\n|$)/gm,
     '$1'
   );
 }
@@ -213,6 +235,8 @@ export function parsePromptFile(path: string, raw: string): { prompt?: ParsedPro
 
   const variables = normalizeVariables(path, frontmatter.data.variables, issues);
   const options = normalizeOptions(path, frontmatter.data.options, issues);
+  const modelRoles = normalizeModelRoles(path, frontmatter.data.model_roles, issues);
+  issues.push(...validateApplicability(path, variables, options));
   const declaredVariables = new Map(variables.map((variable) => [variable.name, variable]));
   const declaredOptionIds = new Set(options.map((option) => option.id));
   issues.push(...validateTemplatePlaceholders(path, template, declaredVariables, declaredOptionIds, options.length));
@@ -233,6 +257,7 @@ export function parsePromptFile(path: string, raw: string): { prompt?: ParsedPro
       tags: normalizeTags(frontmatter.data.tags),
       variables,
       options,
+      ...(modelRoles ? { modelRoles } : {}),
       defaultModelId: frontmatter.data.model_default ?? frontmatter.data.defaultModel ?? frontmatter.data.modelDefault ?? frontmatter.data.modelPreset ?? frontmatter.data.modelPresetId,
       template,
       path
@@ -404,10 +429,74 @@ export function extractConditionVariableNames(template: string): string[] {
   const names = new Set<string>();
   for (const span of extractTemplateSpans(template)) {
     if (span.kind === 'whenOpen') {
-      names.add(span.variableName);
+      for (const condition of span.conditions) {
+        names.add(condition.variableName);
+      }
     }
   }
   return [...names];
+}
+
+export function extractApplicabilityVariableNames(prompt: Pick<ParsedPrompt, 'variables' | 'options'>): string[] {
+  const names = new Set<string>();
+  for (const control of [...prompt.variables, ...prompt.options]) {
+    for (const predicate of [control.visibleWhen, control.enabledWhen]) {
+      for (const name of Object.keys(predicate ?? {})) {
+        names.add(name);
+      }
+    }
+  }
+  return [...names];
+}
+
+export type ApplicabilityState = {
+  visible: boolean;
+  enabled: boolean;
+};
+
+export type PromptApplicability = {
+  variables: Record<string, ApplicabilityState>;
+  options: Record<string, ApplicabilityState>;
+};
+
+export function evaluatePromptApplicability(
+  prompt: Pick<ParsedPrompt, 'variables' | 'options'>,
+  variableValues: Record<string, string>
+): PromptApplicability {
+  const variablesByName = new Map(prompt.variables.map((variable) => [variable.name, variable]));
+  const variableStates: Record<string, ApplicabilityState> = {};
+  const evaluatingVisibility = new Set<string>();
+
+  function isVariableVisible(name: string): boolean {
+    if (variableStates[name]) return variableStates[name].visible;
+    const variable = variablesByName.get(name);
+    if (!variable || evaluatingVisibility.has(name)) return false;
+    evaluatingVisibility.add(name);
+    const visible = predicateMatches(variable.visibleWhen);
+    evaluatingVisibility.delete(name);
+    variableStates[name] = { visible, enabled: visible && predicateMatches(variable.enabledWhen) };
+    return visible;
+  }
+
+  function predicateMatches(predicate: ApplicabilityPredicate | undefined): boolean {
+    return Object.entries(predicate ?? {}).every(([name, choices]) => {
+      const variable = variablesByName.get(name);
+      return Boolean(variable)
+        && isVariableVisible(name)
+        && choices.includes(variableValues[name] ?? variable?.defaultValue ?? '');
+    });
+  }
+
+  for (const variable of prompt.variables) {
+    isVariableVisible(variable.name);
+  }
+
+  const optionStates = Object.fromEntries(prompt.options.map((option) => {
+    const visible = predicateMatches(option.visibleWhen);
+    return [option.id, { visible, enabled: visible && predicateMatches(option.enabledWhen) }];
+  }));
+
+  return { variables: variableStates, options: optionStates };
 }
 
 export function renderPromptTemplateOptions(template: string, optionValues: Record<string, boolean>, allOptionsDisabled: boolean): string {
@@ -422,13 +511,13 @@ export function renderPromptTemplateOptions(template: string, optionValues: Reco
   );
 }
 
-export function renderPromptTemplateConditions(template: string, variableValues: Record<string, string>): string {
+export function renderPromptTemplateConditions(
+  template: string,
+  variableValues: Record<string, string>,
+  inactiveVariableNames: ReadonlySet<string> = new Set()
+): string {
   return cleanRenderedTemplate(
-    stripStandaloneBlockTagLines(normalizeLineEndings(template))
-      .replace(
-        /\{\{\s*#when\s+([A-Za-z_][A-Za-z0-9_]*)\s+([A-Za-z_][A-Za-z0-9_]*)\s*\}\}([\s\S]*?)\{\{\s*\/when\s*\}\}/g,
-        (_, variableName: string, choiceId: string, content: string) => variableValues[variableName] === choiceId ? content : ''
-      )
+    renderWhenBlocks(stripStandaloneBlockTagLines(normalizeLineEndings(template)), variableValues, inactiveVariableNames)
   );
 }
 
@@ -436,20 +525,42 @@ export function renderPromptTemplateControls(
   template: string,
   optionValues: Record<string, boolean>,
   allOptionsDisabled: boolean,
-  variableValues: Record<string, string>
+  variableValues: Record<string, string>,
+  inactiveVariableNames: ReadonlySet<string> = new Set()
 ): string {
   return cleanRenderedTemplate(
-    stripStandaloneBlockTagLines(normalizeLineEndings(template))
+    renderWhenBlocks(
+      stripStandaloneBlockTagLines(normalizeLineEndings(template))
       .replace(/\{\{\s*#option\s+([A-Za-z_][A-Za-z0-9_]*)\s*\}\}([\s\S]*?)\{\{\s*\/option\s*\}\}/g, (_, optionId: string, content: string) =>
         optionValues[optionId] ? content : ''
       )
       .replace(/\{\{\s*#allOptionsDisabled\s*\}\}([\s\S]*?)\{\{\s*\/allOptionsDisabled\s*\}\}/g, (_, content: string) =>
         allOptionsDisabled ? content : ''
-      )
-      .replace(
-        /\{\{\s*#when\s+([A-Za-z_][A-Za-z0-9_]*)\s+([A-Za-z_][A-Za-z0-9_]*)\s*\}\}([\s\S]*?)\{\{\s*\/when\s*\}\}/g,
-        (_, variableName: string, choiceId: string, content: string) => variableValues[variableName] === choiceId ? content : ''
-      )
+      ),
+      variableValues,
+      inactiveVariableNames
+    )
+  );
+}
+
+function renderWhenBlocks(
+  template: string,
+  variableValues: Record<string, string>,
+  inactiveVariableNames: ReadonlySet<string>
+): string {
+  return template.replace(
+    /\{\{\s*#when\s+((?:[A-Za-z_][A-Za-z0-9_]*\s+)+[A-Za-z_][A-Za-z0-9_]*)\s*\}\}([\s\S]*?)\{\{\s*\/when\s*\}\}/g,
+    (_, rawConditions: string, content: string) => {
+      const tokens = rawConditions.trim().split(/\s+/);
+      if (tokens.length % 2 !== 0) return '';
+      const conditions = conditionPairs(tokens);
+      return conditions.length > 0
+        && conditions.every(({ variableName, choiceId }) =>
+          !inactiveVariableNames.has(variableName) && variableValues[variableName] === choiceId
+        )
+        ? content
+        : '';
+    }
   );
 }
 
@@ -515,13 +626,15 @@ function validateTemplatePlaceholders(
       if (blockStack.length > 0) {
         issues.push(promptIssue(path, 'Nested conditional blocks are not supported.'));
       }
-      const variable = declaredVariables.get(span.variableName);
-      if (!variable) {
-        issues.push(promptIssue(path, `Unknown condition variable "${span.variableName}" is not declared as a variable.`));
-      } else if (variable.control !== 'select' && variable.control !== 'slider') {
-        issues.push(promptIssue(path, `Condition variable "${span.variableName}" must use control "select" or "slider".`));
-      } else if (!variable.choices?.some((choice) => choice.id === span.choiceId)) {
-        issues.push(promptIssue(path, `Unknown choice "${span.choiceId}" for condition variable "${span.variableName}".`));
+      for (const condition of span.conditions) {
+        const variable = declaredVariables.get(condition.variableName);
+        if (!variable) {
+          issues.push(promptIssue(path, `Unknown condition variable "${condition.variableName}" is not declared as a variable.`));
+        } else if (variable.control !== 'select' && variable.control !== 'slider') {
+          issues.push(promptIssue(path, `Condition variable "${condition.variableName}" must use control "select" or "slider".`));
+        } else if (!variable.choices?.some((choice) => choice.id === condition.choiceId)) {
+          issues.push(promptIssue(path, `Unknown choice "${condition.choiceId}" for condition variable "${condition.variableName}".`));
+        }
       }
       blockStack.push({ kind: 'when', raw: span.raw });
       continue;
@@ -594,9 +707,14 @@ type TemplateSpan =
   | { kind: 'optionClose'; raw: string }
   | { kind: 'allOptionsDisabledOpen'; raw: string }
   | { kind: 'allOptionsDisabledClose'; raw: string }
-  | { kind: 'whenOpen'; variableName: string; choiceId: string; raw: string }
+  | { kind: 'whenOpen'; conditions: ValueCondition[]; raw: string }
   | { kind: 'whenClose'; raw: string }
   | { kind: 'invalid'; message: string };
+
+type ValueCondition = {
+  variableName: string;
+  choiceId: string;
+};
 
 function extractTemplateSpans(template: string): TemplateSpan[] {
   const spans: TemplateSpan[] = [];
@@ -614,7 +732,15 @@ function extractTemplateSpans(template: string): TemplateSpan[] {
       const raw = template.slice(index, closeIndex + (hasExtraClosingBrace ? 3 : 2));
       const content = template.slice(index + 2, closeIndex).trim();
       const optionMatch = content.match(/^#option\s+([A-Za-z_][A-Za-z0-9_]*)$/);
-      const whenMatch = content.match(/^#when\s+([A-Za-z_][A-Za-z0-9_]*)\s+([A-Za-z_][A-Za-z0-9_]*)$/);
+      const whenTokens = /^#when(?:\s|$)/.test(content)
+        ? content.split(/\s+/).slice(1)
+        : undefined;
+      const whenConditions = whenTokens
+        && whenTokens.length >= 2
+        && whenTokens.length % 2 === 0
+        && whenTokens.every((token) => variableNamePattern.test(token))
+        ? conditionPairs(whenTokens)
+        : undefined;
 
       if (hasExtraClosingBrace) {
         spans.push({ kind: 'invalid', message: `Invalid placeholder syntax "${raw}". Use {{variableName}} with letters, numbers, or underscores only.` });
@@ -626,8 +752,8 @@ function extractTemplateSpans(template: string): TemplateSpan[] {
         spans.push({ kind: 'allOptionsDisabledOpen', raw });
       } else if (content === '/allOptionsDisabled') {
         spans.push({ kind: 'allOptionsDisabledClose', raw });
-      } else if (whenMatch) {
-        spans.push({ kind: 'whenOpen', variableName: whenMatch[1], choiceId: whenMatch[2], raw });
+      } else if (whenConditions) {
+        spans.push({ kind: 'whenOpen', conditions: whenConditions, raw });
       } else if (content === '/when') {
         spans.push({ kind: 'whenClose', raw });
       } else if (content.startsWith('#option') || content.startsWith('/option')) {
@@ -635,7 +761,10 @@ function extractTemplateSpans(template: string): TemplateSpan[] {
       } else if (content.startsWith('#allOptionsDisabled') || content.startsWith('/allOptionsDisabled')) {
         spans.push({ kind: 'invalid', message: `Invalid all-options-disabled block syntax "${raw}". Use {{#allOptionsDisabled}} and {{/allOptionsDisabled}}.` });
       } else if (content.startsWith('#when') || content.startsWith('/when')) {
-        spans.push({ kind: 'invalid', message: `Invalid condition block syntax "${raw}". Use {{#when variableName choiceId}} and {{/when}}.` });
+        const message = whenTokens?.length && whenTokens.every((token) => variableNamePattern.test(token)) && whenTokens.length % 2 !== 0
+          ? `Invalid condition block syntax "${raw}". Conditions must contain complete variable-choice pairs.`
+          : `Invalid condition block syntax "${raw}". Use {{#when variableName choiceId [variableName choiceId ...]}} and {{/when}}.`;
+        spans.push({ kind: 'invalid', message });
       } else if (variableNamePattern.test(content)) {
         spans.push({ kind: 'placeholder', name: content });
       } else {
@@ -656,6 +785,14 @@ function extractTemplateSpans(template: string): TemplateSpan[] {
   }
 
   return spans;
+}
+
+function conditionPairs(tokens: string[]): ValueCondition[] {
+  const pairs: ValueCondition[] = [];
+  for (let index = 0; index + 1 < tokens.length; index += 2) {
+    pairs.push({ variableName: tokens[index], choiceId: tokens[index + 1] });
+  }
+  return pairs;
 }
 
 function normalizeVariables(path: string, input: unknown, issues: ValidationIssue[]): PromptVariable[] {
@@ -745,7 +882,8 @@ function normalizeVariable(
     required: data.required ?? true,
     defaultValue,
     control,
-    ...(usesChoices ? { choices } : {})
+    ...(usesChoices ? { choices } : {}),
+    ...normalizedApplicability(path, `Variable "${name}"`, data.visible_when, data.enabled_when, issues)
   };
 }
 
@@ -829,7 +967,8 @@ function normalizeOptions(path: string, input: unknown, issues: ValidationIssue[
       id,
       label: parsed.data.label?.trim() || id,
       description: parsed.data.description?.trim() || undefined,
-      defaultEnabled: parsed.data.defaultEnabled ?? parsed.data.default ?? true
+      defaultEnabled: parsed.data.defaultEnabled ?? parsed.data.default ?? true,
+      ...normalizedApplicability(path, `Option "${id}"`, parsed.data.visible_when, parsed.data.enabled_when, issues)
     });
   }
 
@@ -844,6 +983,177 @@ function normalizeOptions(path: string, input: unknown, issues: ValidationIssue[
   }
 
   return options;
+}
+
+function normalizedApplicability(
+  path: string,
+  owner: string,
+  rawVisibleWhen: unknown,
+  rawEnabledWhen: unknown,
+  issues: ValidationIssue[]
+): ControlApplicability {
+  const visibleWhen = normalizeApplicabilityPredicate(path, owner, 'visible_when', rawVisibleWhen, issues);
+  const enabledWhen = normalizeApplicabilityPredicate(path, owner, 'enabled_when', rawEnabledWhen, issues);
+  return {
+    ...(visibleWhen ? { visibleWhen } : {}),
+    ...(enabledWhen ? { enabledWhen } : {})
+  };
+}
+
+function normalizeApplicabilityPredicate(
+  path: string,
+  owner: string,
+  field: 'visible_when' | 'enabled_when',
+  input: unknown,
+  issues: ValidationIssue[]
+): ApplicabilityPredicate | undefined {
+  if (input == null) return undefined;
+  if (typeof input !== 'object' || Array.isArray(input)) {
+    issues.push(promptIssue(path, `${owner} ${field} must be an object mapping variables to arrays of choice ids.`));
+    return undefined;
+  }
+
+  const predicate: ApplicabilityPredicate = {};
+  for (const [rawName, rawChoices] of Object.entries(input as Record<string, unknown>)) {
+    const name = rawName.trim();
+    if (!variableNamePattern.test(name)) {
+      issues.push(promptIssue(path, `${owner} ${field} has invalid variable name "${rawName}".`));
+      continue;
+    }
+    if (!Array.isArray(rawChoices) || rawChoices.length === 0) {
+      issues.push(promptIssue(path, `${owner} ${field} entry "${name}" must be a non-empty array of choice ids.`));
+      continue;
+    }
+    const choices = rawChoices
+      .filter((choice) => {
+        if (typeof choice !== 'string' || !variableNamePattern.test(choice.trim())) {
+          issues.push(promptIssue(path, `${owner} ${field} entry "${name}" contains an invalid choice id "${String(choice)}".`));
+          return false;
+        }
+        return true;
+      })
+      .map((choice) => (choice as string).trim());
+    if (choices.length > 0) {
+      predicate[name] = [...new Set(choices)];
+    }
+  }
+
+  return Object.keys(predicate).length > 0 ? predicate : undefined;
+}
+
+function validateApplicability(path: string, variables: PromptVariable[], options: PromptOption[]): ValidationIssue[] {
+  const issues: ValidationIssue[] = [];
+  const variablesByName = new Map(variables.map((variable) => [variable.name, variable]));
+
+  const validateControl = (owner: string, control: ControlApplicability, selfName?: string) => {
+    for (const [field, predicate] of [
+      ['visible_when', control.visibleWhen],
+      ['enabled_when', control.enabledWhen]
+    ] as const) {
+      for (const [name, choices] of Object.entries(predicate ?? {})) {
+        const referenced = variablesByName.get(name);
+        if (!referenced) {
+          issues.push(promptIssue(path, `${owner} ${field} references unknown variable "${name}".`));
+          continue;
+        }
+        if (name === selfName) {
+          issues.push(promptIssue(path, `${owner} ${field} cannot reference itself.`));
+          continue;
+        }
+        if (referenced.control !== 'select' && referenced.control !== 'slider') {
+          issues.push(promptIssue(path, `${owner} ${field} references variable "${name}", which must use control "select" or "slider".`));
+          continue;
+        }
+        for (const choice of choices) {
+          if (!referenced.choices?.some((candidate) => candidate.id === choice)) {
+            issues.push(promptIssue(path, `${owner} ${field} references unknown choice "${choice}" for variable "${name}".`));
+          }
+        }
+      }
+    }
+  };
+
+  for (const variable of variables) {
+    validateControl(`Variable "${variable.name}"`, variable, variable.name);
+  }
+  for (const option of options) {
+    validateControl(`Option "${option.id}"`, option);
+  }
+  issues.push(...applicabilityCycleIssues(path, variables));
+  return issues;
+}
+
+function applicabilityCycleIssues(path: string, variables: PromptVariable[]): ValidationIssue[] {
+  const dependencies = new Map(variables.map((variable) => [
+    variable.name,
+    [...new Set([
+      ...Object.keys(variable.visibleWhen ?? {}),
+      ...Object.keys(variable.enabledWhen ?? {})
+    ])].filter((name) => name !== variable.name)
+  ]));
+  const visited = new Set<string>();
+  const visiting = new Set<string>();
+  const stack: string[] = [];
+
+  const findCycle = (name: string): string[] | undefined => {
+    if (visiting.has(name)) {
+      const start = stack.indexOf(name);
+      return [...stack.slice(start), name];
+    }
+    if (visited.has(name)) return undefined;
+    visiting.add(name);
+    stack.push(name);
+    for (const dependency of dependencies.get(name) ?? []) {
+      if (!dependencies.has(dependency)) continue;
+      const cycle = findCycle(dependency);
+      if (cycle) return cycle;
+    }
+    stack.pop();
+    visiting.delete(name);
+    visited.add(name);
+    return undefined;
+  };
+
+  for (const variable of variables) {
+    const cycle = findCycle(variable.name);
+    if (cycle) {
+      return [promptIssue(path, `Applicability cycle detected: ${cycle.map((name) => `"${name}"`).join(' -> ')}.`)];
+    }
+  }
+  return [];
+}
+
+function normalizeModelRoles(path: string, input: unknown, issues: ValidationIssue[]): PromptModelRoles | undefined {
+  if (input == null) return undefined;
+  if (typeof input !== 'object' || Array.isArray(input)) {
+    issues.push(promptIssue(path, 'model_roles must be an object keyed by "model" or "rubberDuckModel".'));
+    return undefined;
+  }
+
+  const roles: PromptModelRoles = {};
+  for (const [name, value] of Object.entries(input as Record<string, unknown>)) {
+    if (name !== 'model' && name !== 'rubberDuckModel') {
+      issues.push(promptIssue(path, `Unknown model role "${name}". model_roles supports only "model" and "rubberDuckModel".`));
+      continue;
+    }
+    if (typeof value !== 'object' || value == null || Array.isArray(value)) {
+      issues.push(promptIssue(path, `Model role "${name}" must be an object with label and description.`));
+      continue;
+    }
+    const record = value as Record<string, unknown>;
+    const label = typeof record.label === 'string' ? record.label.trim() : '';
+    const description = typeof record.description === 'string' ? record.description.trim() : '';
+    if (!label) {
+      issues.push(promptIssue(path, `Model role "${name}" requires a non-empty label.`));
+    }
+    if (!description) {
+      issues.push(promptIssue(path, `Model role "${name}" requires a non-empty description.`));
+    }
+    if (label && description) {
+      roles[name] = { label, description };
+    }
+  }
+  return Object.keys(roles).length > 0 ? roles : undefined;
 }
 
 function pushOption(path: string, issues: ValidationIssue[], options: PromptOption[], option: PromptOption) {

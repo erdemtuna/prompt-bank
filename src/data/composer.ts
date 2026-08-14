@@ -1,4 +1,16 @@
-import { extractConditionVariableNames, extractPlaceholders, renderPromptTemplateControls, type ModelPreset, type Prompt, type PromptOption, type PromptVariable, type ValidationIssue } from './schemas';
+import {
+  evaluatePromptApplicability,
+  extractApplicabilityVariableNames,
+  extractConditionVariableNames,
+  extractPlaceholders,
+  renderPromptTemplateControls,
+  type ModelPreset,
+  type Prompt,
+  type PromptApplicability,
+  type PromptOption,
+  type PromptVariable,
+  type ValidationIssue
+} from './schemas';
 
 export type VariableValues = Record<string, string>;
 export type OptionValues = Record<string, boolean>;
@@ -24,6 +36,8 @@ export type CompositionResult = {
   disabledReasons: string[];
   usesModelPlaceholder: boolean;
   usesRubberDuckModelPlaceholder: boolean;
+  applicability: PromptApplicability;
+  effectiveOptionValues: OptionValues;
   isValid: boolean;
   canCopy: boolean;
 };
@@ -41,6 +55,50 @@ export function initialOptionValues(options: PromptOption[]): OptionValues {
   return Object.fromEntries(options.map((option) => [option.id, option.defaultEnabled]));
 }
 
+export type PromptControlState = {
+  applicability: PromptApplicability;
+  effectiveOptionValues: OptionValues;
+  inactiveConditionVariableNames: Set<string>;
+  allOptionsDisabled: boolean;
+};
+
+export function resolvePromptControlState(
+  prompt: Pick<Prompt, 'variables' | 'options'>,
+  values: VariableValues,
+  optionValues: OptionValues
+): PromptControlState {
+  const variableValues = { ...initialVariableValues(prompt.variables), ...values };
+  const applicability = evaluatePromptApplicability(prompt, variableValues);
+  const effectiveOptionValues = Object.fromEntries(prompt.options.map((option) => {
+    const state = applicability.options[option.id];
+    return [option.id, Boolean(state?.visible && state.enabled && optionValues[option.id])];
+  }));
+  const visibleOptions = prompt.options.filter((option) => applicability.options[option.id]?.visible);
+  return {
+    applicability,
+    effectiveOptionValues,
+    inactiveConditionVariableNames: new Set(
+      prompt.variables
+        .filter((variable) => {
+          const state = applicability.variables[variable.name];
+          return !state?.visible
+            || ((variable.control === 'select' || variable.control === 'slider') && !state.enabled);
+        })
+        .map((variable) => variable.name)
+    ),
+    allOptionsDisabled: visibleOptions.length > 0
+      && visibleOptions.every((option) => effectiveOptionValues[option.id] === false)
+  };
+}
+
+export function normalizeOptionValues(
+  prompt: Pick<Prompt, 'variables' | 'options'>,
+  values: VariableValues,
+  optionValues: OptionValues
+): OptionValues {
+  return resolvePromptControlState(prompt, values, optionValues).effectiveOptionValues;
+}
+
 export function promptUsesModelPlaceholder(prompt: Prompt): boolean {
   return extractPlaceholders(renderPromptTemplate(prompt, initialOptionValues(prompt.options), initialVariableValues(prompt.variables))).includes('model');
 }
@@ -50,19 +108,30 @@ export function promptUsesRubberDuckModelPlaceholder(prompt: Prompt): boolean {
 }
 
 export function composePrompt(prompt: Prompt, values: VariableValues, builtIns: BuiltInValues = {}, options: CompositionOptions = {}): CompositionResult {
-  const optionValues = { ...initialOptionValues(prompt.options), ...(options.optionValues ?? {}) };
+  const requestedOptionValues = { ...initialOptionValues(prompt.options), ...(options.optionValues ?? {}) };
   const variableValues = { ...initialVariableValues(prompt.variables), ...values };
-  const renderedTemplate = renderPromptTemplate(prompt, optionValues, variableValues);
+  const controlState = resolvePromptControlState(prompt, variableValues, requestedOptionValues);
+  const renderedTemplate = renderPromptTemplate(prompt, controlState.effectiveOptionValues, variableValues, controlState);
   const placeholders = extractPlaceholders(renderedTemplate);
   const conditionVariableNames = extractConditionVariableNames(prompt.template);
+  const applicabilityVariableNames = extractApplicabilityVariableNames(prompt);
   const usesModelPlaceholder = placeholders.includes('model');
   const usesRubberDuckModelPlaceholder = placeholders.includes('rubberDuckModel');
   const usesAnyModelPlaceholder = usesModelPlaceholder || usesRubberDuckModelPlaceholder;
-  const hasConditionalBlocks = prompt.options.length > 0 || conditionVariableNames.length > 0;
+  const hasConditionalBlocks = prompt.options.length > 0 || conditionVariableNames.length > 0 || applicabilityVariableNames.length > 0;
   const activeVariableNames = !hasConditionalBlocks
-    ? prompt.variables.map((variable) => variable.name)
+    ? prompt.variables
+      .filter((variable) => isVariableActive(controlState.applicability, variable.name))
+      .map((variable) => variable.name)
     : prompt.variables
-      .filter((variable) => placeholders.includes(variable.name) || conditionVariableNames.includes(variable.name))
+      .filter((variable) =>
+        isVariableActive(controlState.applicability, variable.name)
+        && (
+          placeholders.includes(variable.name)
+          || conditionVariableNames.includes(variable.name)
+          || applicabilityVariableNames.includes(variable.name)
+        )
+      )
       .map((variable) => variable.name);
   const missingRequired = prompt.variables
     .filter((variable) => activeVariableNames.includes(variable.name) && variable.required && !(variableValues[variable.name] ?? '').trim())
@@ -83,6 +152,7 @@ export function composePrompt(prompt: Prompt, values: VariableValues, builtIns: 
     }
     const variable = prompt.variables.find((candidate) => candidate.name === name);
     if (variable) {
+      if (!isVariableActive(controlState.applicability, name)) return '';
       return interpolatedVariableValue(variable, variableValues[name] ?? '');
     }
     return builtIns[name] ?? '';
@@ -103,14 +173,31 @@ export function composePrompt(prompt: Prompt, values: VariableValues, builtIns: 
     disabledReasons,
     usesModelPlaceholder,
     usesRubberDuckModelPlaceholder,
+    applicability: controlState.applicability,
+    effectiveOptionValues: controlState.effectiveOptionValues,
     isValid: disabledReasons.length === 0,
     canCopy: disabledReasons.length === 0
   };
 }
 
-function renderPromptTemplate(prompt: Prompt, optionValues: OptionValues, variableValues: VariableValues): string {
-  const allOptionsDisabled = prompt.options.length > 0 && prompt.options.every((option) => optionValues[option.id] === false);
-  return renderPromptTemplateControls(prompt.template, optionValues, allOptionsDisabled, variableValues);
+function renderPromptTemplate(
+  prompt: Prompt,
+  optionValues: OptionValues,
+  variableValues: VariableValues,
+  controlState = resolvePromptControlState(prompt, variableValues, optionValues)
+): string {
+  return renderPromptTemplateControls(
+    prompt.template,
+    controlState.effectiveOptionValues,
+    controlState.allOptionsDisabled,
+    variableValues,
+    controlState.inactiveConditionVariableNames
+  );
+}
+
+function isVariableActive(applicability: PromptApplicability, name: string): boolean {
+  const state = applicability.variables[name];
+  return Boolean(state?.visible && state.enabled);
 }
 
 function interpolatedVariableValue(variable: PromptVariable, rawValue: string): string {
