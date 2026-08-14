@@ -18,6 +18,8 @@ async function mockDesktopWithChangingGlobal(page: Page) {
     win.__TAURI_INTERNALS__ = {
       invoke: (cmd: string) => {
         switch (cmd) {
+          case 'plugin:app|version':
+            return Promise.resolve('9.8.7');
           case 'read_global_prompts':
             return Promise.resolve({ files: secondExists ? [one, two] : [one] });
           case 'list_workspaces':
@@ -34,7 +36,9 @@ async function mockDesktopWithChangingGlobal(page: Page) {
 
 test('Ctrl+K focuses the index search from anywhere in the app', async ({ page }) => {
   await page.goto('/');
-  await expect(page.getByRole('button', { name: 'Review a Pull Request' })).toBeVisible();
+  await expect(
+    page.getByRole('region', { name: 'Prompt library' }).getByRole('button', { name: 'Review a Pull Request' })
+  ).toBeVisible();
 
   const search = page.getByLabel('Search prompts');
   await expect(search).not.toBeFocused();
@@ -83,7 +87,9 @@ test('Ctrl+Enter reports why copying is blocked instead of copying nothing', asy
 
 test('the shortcut hints are visible so the shortcuts are discoverable', async ({ page }) => {
   await page.goto('/');
-  await expect(page.getByRole('button', { name: 'Review a Pull Request' })).toBeVisible();
+  await expect(
+    page.getByRole('region', { name: 'Prompt library' }).getByRole('button', { name: 'Review a Pull Request' })
+  ).toBeVisible();
 
   // The hint follows the host platform, so the expectation has to as well or
   // this fails for every contributor on macOS.
@@ -113,6 +119,8 @@ test('the empty state explains where prompts go and offers a working example', a
     (window as unknown as { __TAURI_INTERNALS__: unknown }).__TAURI_INTERNALS__ = {
       invoke: (cmd: string) => {
         switch (cmd) {
+          case 'plugin:app|version':
+            return Promise.resolve('9.8.7');
           case 'read_global_prompts':
             return Promise.resolve({ files: [] });
           case 'list_workspaces':

@@ -1,7 +1,9 @@
 // @vitest-environment jsdom
+import { getVersion } from '@tauri-apps/api/app';
 import { clearMocks, mockIPC } from '@tauri-apps/api/mocks';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  getAppVersion,
   isDesktop,
   listWorkspaces,
   openWorkspace,
@@ -16,13 +18,58 @@ import {
   type WorkspaceSummaryDto
 } from './desktopClient';
 
-afterEach(() => clearMocks());
+vi.mock('@tauri-apps/api/app', () => ({ getVersion: vi.fn() }));
+
+const getVersionMock = vi.mocked(getVersion);
+
+afterEach(() => {
+  clearMocks();
+  delete (window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__;
+  getVersionMock.mockReset();
+});
 
 describe('desktopClient', () => {
   it('reports desktop only when the Tauri internals are present', () => {
     expect(isDesktop()).toBe(false);
     mockIPC(() => undefined);
     expect(isDesktop()).toBe(true);
+  });
+
+  it('does not request the app version outside desktop mode', async () => {
+    getVersionMock.mockResolvedValue('9.8.7');
+
+    await expect(getAppVersion()).resolves.toBeNull();
+    expect(getVersionMock).not.toHaveBeenCalled();
+  });
+
+  it('returns the normalized desktop app version', async () => {
+    mockIPC(() => undefined);
+    getVersionMock.mockResolvedValue(' 9.8.7 ');
+
+    await expect(getAppVersion()).resolves.toBe('9.8.7');
+    expect(getVersionMock).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    ['null', null],
+    ['undefined', undefined],
+    ['empty', ''],
+    ['whitespace', '   '],
+    ['number', 51],
+    ['object', {}],
+    ['array', ['9.8.7']]
+  ])('omits an invalid desktop app version response: %s', async (_label, value) => {
+    mockIPC(() => undefined);
+    getVersionMock.mockResolvedValue(value as string);
+
+    await expect(getAppVersion()).resolves.toBeNull();
+  });
+
+  it('omits the desktop app version when lookup rejects', async () => {
+    mockIPC(() => undefined);
+    getVersionMock.mockRejectedValue(new Error('version unavailable'));
+
+    await expect(getAppVersion()).resolves.toBeNull();
   });
 
   it('maps global prompts into a global source input', async () => {

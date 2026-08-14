@@ -1,3 +1,4 @@
+import { getVersion } from '@tauri-apps/api/app';
 import { invoke } from '@tauri-apps/api/core';
 import type { PromptSourceInput } from './loaders';
 
@@ -18,6 +19,18 @@ export type OpenedWorkspace = {
 /** True when running inside the Tauri desktop shell (or a test that mocks it). */
 export function isDesktop(): boolean {
   return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+}
+
+export async function getAppVersion(): Promise<string | null> {
+  if (!isDesktop()) return null;
+  try {
+    const version: unknown = await getVersion();
+    if (typeof version !== 'string') return null;
+    const normalized = version.trim();
+    return normalized || null;
+  } catch {
+    return null;
+  }
 }
 
 function filesToMap(files: PromptFileDto[]): Record<string, string> {

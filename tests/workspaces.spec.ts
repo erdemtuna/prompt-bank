@@ -5,8 +5,10 @@ const validPrompt = (id: string, title: string, category = 'review') =>
   `---\nid: ${id}\ntitle: ${title}\ndescription: ${title} prompt\ncategory: ${category}\n---\nBody for ${id}.`;
 
 type Internals = { invoke: (cmd: string, args: { id?: string }) => Promise<unknown> };
+type VersionMode = 'reject' | 'null' | 'empty' | 'invalid';
 
 const mockData = {
+  version: '9.8.7',
   global: { files: [{ relativePath: 'globaltip.md', contents: validPrompt('global-tip', 'Global Tip') }] },
   recents: [
     { id: 'ws1', label: 'alpha', displayPath: '/home/u/alpha', lastOpened: null },
@@ -23,9 +25,29 @@ const mockData = {
 async function mockDesktop(page: Page) {
   await page.addInitScript((data) => {
     // Minimal stand-in for the Tauri IPC bridge the desktop shell provides.
-    (window as unknown as { __TAURI_INTERNALS__: unknown }).__TAURI_INTERNALS__ = {
+    const win = window as unknown as {
+      __TAURI_INTERNALS__: unknown;
+      __pbVersionMode?: VersionMode;
+      __pbVersionRequests?: number;
+    };
+    win.__pbVersionRequests = 0;
+    win.__TAURI_INTERNALS__ = {
       invoke: (cmd: string, args: { id?: string }) => {
         switch (cmd) {
+          case 'plugin:app|version':
+            win.__pbVersionRequests = (win.__pbVersionRequests ?? 0) + 1;
+            switch (win.__pbVersionMode) {
+              case 'reject':
+                return Promise.reject(new Error('version unavailable'));
+              case 'null':
+                return Promise.resolve(null);
+              case 'empty':
+                return Promise.resolve('   ');
+              case 'invalid':
+                return Promise.resolve({ version: data.version });
+              default:
+                return Promise.resolve(data.version);
+            }
           case 'read_global_prompts':
             return Promise.resolve(data.global);
           case 'list_workspaces':
@@ -50,10 +72,8 @@ test.beforeEach(async ({ page }) => {
   await mockDesktop(page);
 });
 
-// A folder prompt's title appears both in the library index row and, because the
-// mock sets each description to "<title> prompt", in the composer's info tooltip
-// button. Scope row assertions to the library region so a bare title regex
-// resolves to exactly the index row rather than also matching that tooltip.
+// Scope prompt-row assertions to the library region because the selected
+// prompt's title can also appear in the composer.
 const libraryButton = (page: Page, name: RegExp) =>
   page.getByRole('region', { name: 'Prompt library' }).getByRole('button', { name });
 
@@ -65,7 +85,59 @@ test('the Library tab shows built in and global prompts with source labels', asy
   await expect(page.getByRole('button', { name: /Global Tip, Global/ })).toBeVisible();
   // a built in prompt is still present and labelled
   await expect(page.getByRole('button', { name: /, Built in/ }).first()).toBeVisible();
+  await expect(page.getByText('v9.8.7', { exact: true })).toBeVisible();
 });
+
+test('the tightest desktop masthead keeps Refresh and the version in bounds', async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 900 });
+  await page.goto('/');
+
+  const version = page.getByLabel('Version 9.8.7');
+  const refresh = page.getByRole('button', { name: 'Refresh' });
+  await expect(version).toBeVisible();
+  await expect(refresh).toBeVisible();
+  await expect(page.getByText('Compose reusable prompts from Markdown')).toBeHidden();
+
+  const geometry = await page.locator('header').evaluate((header) => {
+    const headerRect = header.getBoundingClientRect();
+    const versionRect = header.querySelector('[aria-label="Version 9.8.7"]')?.getBoundingClientRect();
+    const refreshRect = header.querySelector('button[title="Re-read prompt files from disk"]')?.getBoundingClientRect();
+    return {
+      documentOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+      headerOverflow: header.scrollWidth - header.clientWidth,
+      headerLeft: headerRect.left,
+      headerRight: headerRect.right,
+      versionLeft: versionRect?.left,
+      refreshRight: refreshRect?.right
+    };
+  });
+
+  expect(geometry.documentOverflow).toBeLessThanOrEqual(1);
+  expect(geometry.headerOverflow).toBeLessThanOrEqual(1);
+  expect(geometry.versionLeft).toBeGreaterThanOrEqual(geometry.headerLeft - 1);
+  expect(geometry.refreshRight).toBeLessThanOrEqual(geometry.headerRight + 1);
+});
+
+for (const versionMode of ['reject', 'null', 'empty', 'invalid'] as const) {
+  test(`an unavailable ${versionMode} desktop version is omitted without an error`, async ({ page }) => {
+    const pageErrors: string[] = [];
+    page.on('pageerror', (error) => pageErrors.push(error.message));
+    await page.addInitScript((mode) => {
+      (window as unknown as { __pbVersionMode: VersionMode }).__pbVersionMode = mode;
+    }, versionMode);
+
+    await page.goto('/');
+    await expect(page.getByRole('button', { name: /Global Tip, Global/ })).toBeVisible();
+    await expect.poll(() =>
+      page.evaluate(() => (window as unknown as { __pbVersionRequests?: number }).__pbVersionRequests ?? 0)
+    ).toBeGreaterThanOrEqual(1);
+
+    await expect(page.locator('[aria-label^="Version "]')).toHaveCount(0);
+    await expect(page.getByText('vnull', { exact: true })).toHaveCount(0);
+    await expect(page.locator('header [role="status"], header [role="alert"]')).toHaveCount(0);
+    expect(pageErrors).toEqual([]);
+  });
+}
 
 test('opening a recent adds a workspace tab showing its folder prompts', async ({ page }) => {
   await page.goto('/');

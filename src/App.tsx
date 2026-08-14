@@ -6,6 +6,7 @@ import { WorkspaceTabs } from './components/WorkspaceTabs';
 import { WorkspaceView } from './components/WorkspaceView';
 import { builtinPresetsRaw, builtinPromptSources, resolvePromptsForApp, type PromptSourceInput } from './data/loaders';
 import {
+  getAppVersion,
   isDesktop,
   listWorkspaces,
   openWorkspace,
@@ -71,6 +72,7 @@ const useStyles = makeStyles({
   mastheadInner: {
     boxSizing: 'border-box',
     width: '100%',
+    minWidth: 0,
     maxWidth: '1360px',
     margin: '0 auto',
     padding: '12px 40px',
@@ -78,9 +80,22 @@ const useStyles = makeStyles({
     alignItems: 'baseline',
     justifyContent: 'space-between',
     gap: '20px',
-    '@media (max-width: 900px)': { padding: '11px 20px' }
+    '@media (max-width: 900px)': { padding: '11px 20px' },
+    '@media (max-width: 380px)': { padding: '10px 12px', gap: '10px' }
   },
-  brand: { display: 'flex', alignItems: 'baseline', gap: '16px', minWidth: 0, flexWrap: 'wrap' },
+  brand: {
+    display: 'flex',
+    alignItems: 'baseline',
+    gap: '16px',
+    minWidth: 0,
+    flex: 1
+  },
+  brandLockup: {
+    display: 'inline-flex',
+    alignItems: 'baseline',
+    gap: '8px',
+    flexShrink: 0
+  },
   wordmark: {
     margin: 0,
     fontFamily: 'var(--sw-sans)',
@@ -91,13 +106,29 @@ const useStyles = makeStyles({
     textTransform: 'uppercase',
     color: 'var(--sw-ink)'
   },
+  version: {
+    flexShrink: 0,
+    fontFamily: 'var(--sw-mono)',
+    fontWeight: 600,
+    fontSize: '10px',
+    lineHeight: 1,
+    letterSpacing: '0.06em',
+    color: 'var(--sw-muted)',
+    fontVariantNumeric: 'tabular-nums'
+  },
   tagline: {
+    minWidth: 0,
+    flex: 1,
+    overflow: 'hidden',
+    whiteSpace: 'nowrap',
+    textOverflow: 'ellipsis',
     fontFamily: 'var(--sw-mono)',
     fontWeight: 500,
     fontSize: '11px',
     letterSpacing: '0.12em',
     textTransform: 'uppercase',
-    color: 'var(--sw-muted)'
+    color: 'var(--sw-muted)',
+    '@media (max-width: 720px)': { display: 'none' }
   },
   mastheadMeta: {
     flexShrink: 0,
@@ -193,6 +224,7 @@ export default function App() {
   const [recents, setRecents] = useState<WorkspaceSummaryDto[]>([]);
   const [notice, setNotice] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [appVersion, setAppVersion] = useState<string | null>(null);
 
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState('all');
@@ -209,6 +241,17 @@ export default function App() {
     observer.observe(node);
     return () => observer.disconnect();
   }, []);
+
+  useEffect(() => {
+    if (!desktop) return;
+    let cancelled = false;
+    getAppVersion().then((version) => {
+      if (!cancelled) setAppVersion(version);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [desktop]);
 
   useEffect(() => {
     if (!desktop) return;
@@ -373,7 +416,14 @@ export default function App() {
       <header className={styles.masthead} ref={headerRef}>
         <div className={styles.mastheadInner}>
           <div className={styles.brand}>
-            <h1 className={styles.wordmark}>Prompt&nbsp;Bank</h1>
+            <span className={styles.brandLockup}>
+              <h1 className={styles.wordmark}>Prompt&nbsp;Bank</h1>
+              {appVersion ? (
+                <span className={styles.version} aria-label={`Version ${appVersion}`}>
+                  v{appVersion}
+                </span>
+              ) : null}
+            </span>
             <span className={styles.tagline}>Compose reusable prompts from Markdown</span>
           </div>
           <span className={styles.mastheadActions}>
