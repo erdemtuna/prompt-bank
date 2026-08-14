@@ -1,8 +1,8 @@
 import { Input, Select, Slider, Text, Textarea, makeStyles } from '@fluentui/react-components';
 import { CheckmarkRegular, CheckmarkCircleRegular, ErrorCircleRegular, InfoRegular } from '@fluentui/react-icons';
 import { useCallback, useEffect, useId, useMemo, useState } from 'react';
-import { composeModelLabel, composePrompt, initialOptionValues, initialVariableValues, promptUsesModelPlaceholder, promptUsesRubberDuckModelPlaceholder, type OptionValues, type VariableValues } from '../data/composer';
-import type { ModelPreset, ModelPresetVariant, Prompt, PromptVariable, ValidationIssue } from '../data/schemas';
+import { composeModelLabel, composePrompt, initialOptionValues, initialVariableValues, normalizeOptionValues, promptUsesModelPlaceholder, promptUsesRubberDuckModelPlaceholder, type OptionValues, type VariableValues } from '../data/composer';
+import type { ModelPreset, ModelPresetVariant, Prompt, PromptOption, PromptVariable, ValidationIssue } from '../data/schemas';
 import { formatCount, shortcutModifier, shouldUseTextarea } from './promptUi';
 
 const useStyles = makeStyles({
@@ -59,8 +59,8 @@ const useStyles = makeStyles({
   },
   workspace: {
     display: 'grid',
-    gridTemplateColumns: 'minmax(0, 1fr) minmax(300px, 360px)',
-    gap: '40px',
+    gridTemplateColumns: 'minmax(0, 1fr) minmax(390px, 440px)',
+    gap: '34px',
     alignItems: 'start',
     borderTop: '1px solid var(--sw-rule)',
     paddingTop: '20px',
@@ -246,20 +246,31 @@ const useStyles = makeStyles({
   },
   optionList: {
     display: 'grid',
-    gap: '4px'
+    gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+    gap: '6px 16px',
+    '@media (max-width: 640px)': {
+      gridTemplateColumns: '1fr'
+    }
   },
   checkRow: {
     display: 'flex',
-    alignItems: 'center',
-    gap: '10px'
+    alignItems: 'flex-start',
+    gap: '8px',
+    minWidth: 0
+  },
+  checkContent: {
+    display: 'grid',
+    gap: '2px',
+    minWidth: 0
   },
   check: {
     display: 'inline-flex',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     gap: '12px',
     cursor: 'pointer',
     userSelect: 'none',
     padding: '6px 0',
+    minWidth: 0,
     '& input:checked + span': {
       backgroundColor: 'var(--sw-accent)',
       border: '1.5px solid var(--sw-accent)',
@@ -271,6 +282,18 @@ const useStyles = makeStyles({
     },
     ':hover span[data-box]': {
       border: '1.5px solid var(--sw-ink)'
+    },
+    '& input:disabled + span': {
+      border: '1.5px solid var(--sw-rule)',
+      backgroundColor: 'var(--sw-fill)',
+      color: 'transparent'
+    }
+  },
+  checkDisabled: {
+    cursor: 'not-allowed',
+    opacity: 0.58,
+    ':hover span[data-box]': {
+      border: '1.5px solid var(--sw-rule)'
     }
   },
   checkInput: {
@@ -300,34 +323,72 @@ const useStyles = makeStyles({
     transitionTimingFunction: 'ease'
   },
   checkText: {
+    minWidth: 0,
     fontFamily: 'var(--sw-sans)',
     fontSize: '14px',
     lineHeight: 1.3,
     color: 'var(--sw-ink)'
   },
+  checkReason: {
+    marginLeft: '30px',
+    fontFamily: 'var(--sw-sans)',
+    fontSize: '11px',
+    lineHeight: 1.35,
+    color: 'var(--sw-muted)'
+  },
   fields: {
     display: 'grid',
     gap: '20px'
   },
+  workflowFields: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+    gap: '18px',
+    '@media (max-width: 640px)': {
+      gridTemplateColumns: '1fr'
+    }
+  },
   modelGroups: {
     display: 'grid',
-    gap: '24px'
+    gap: '14px'
   },
-  modelGroup: {
+  modelCard: {
     display: 'grid',
-    gap: '10px'
+    gap: '12px',
+    padding: '14px',
+    border: '1px solid var(--sw-rule)',
+    backgroundColor: 'var(--sw-panel)'
   },
-  variantRow: {
-    display: 'flex',
-    flexWrap: 'wrap',
-    gap: '16px'
+  modelHeader: {
+    display: 'grid',
+    gap: '4px'
+  },
+  modelRole: {
+    fontFamily: 'var(--sw-sans)',
+    fontSize: '14px',
+    fontWeight: 700,
+    lineHeight: 1.3,
+    color: 'var(--sw-ink)'
+  },
+  modelDescription: {
+    fontFamily: 'var(--sw-sans)',
+    fontSize: '12px',
+    lineHeight: 1.4,
+    color: 'var(--sw-muted)'
+  },
+  modelGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'minmax(130px, 1.2fr) minmax(82px, 0.75fr) minmax(125px, 1fr)',
+    gap: '12px',
+    alignItems: 'end',
+    '@media (max-width: 640px)': {
+      gridTemplateColumns: '1fr',
+      alignItems: 'stretch'
+    }
   },
   variantField: {
     display: 'grid',
     gap: '6px',
-    flexGrow: 1,
-    flexShrink: 1,
-    flexBasis: '130px',
     minWidth: 0
   },
   variantLabel: {
@@ -507,7 +568,9 @@ function variantSelection(variants: ModelPresetVariant[] | undefined, defaultId:
 
 type ModelGroupProps = {
   styles: ComposerStyles;
-  name: 'General' | 'Alternative';
+  slotName: 'General' | 'Alternative';
+  roleLabel: string;
+  roleDescription: string;
   presets: ModelPreset[];
   presetId: string;
   preset: ModelPreset | undefined;
@@ -521,7 +584,9 @@ type ModelGroupProps = {
 
 function ModelGroup({
   styles,
-  name,
+  slotName,
+  roleLabel,
+  roleDescription,
   presets,
   presetId,
   preset,
@@ -536,56 +601,117 @@ function ModelGroup({
   const reasoning = preset?.reasoning ?? [];
 
   return (
-    <div className={styles.modelGroup}>
-      <span className={styles.labelText}>{name} model</span>
-      <Select
-        appearance="underline"
-        className={styles.underlineField}
-        aria-label={`${name} model`}
-        value={presetId}
-        disabled={presets.length === 0}
-        onChange={(_, data) => onPresetChange(data.value)}
-      >
-        {presetId ? null : <option value="">{placeholder}</option>}
-        {presets.map((item) => (
-          <option key={item.id} value={item.id}>{item.label}</option>
-        ))}
-      </Select>
-      {contexts.length > 0 || reasoning.length > 0 ? (
-        <div className={styles.variantRow}>
-          {contexts.length > 0 ? (
-            <div className={styles.variantField}>
-              <span className={styles.variantLabel}>Context</span>
-              <Select
-                appearance="underline"
-                className={styles.underlineField}
-                aria-label={`${name} context`}
-                value={contextId}
-                onChange={(_, data) => onContextChange(data.value)}
-              >
-                {contexts.map((variant) => (
-                  <option key={variant.id} value={variant.id}>{variantOptionText(variant, 'context')}</option>
-                ))}
-              </Select>
-            </div>
-          ) : null}
-          {reasoning.length > 0 ? (
-            <div className={styles.variantField}>
-              <span className={styles.variantLabel}>Reasoning</span>
-              <DiscreteSlider
-                label={`${name} reasoning`}
-                value={reasoningId}
-                choices={reasoning.map((variant) => ({
-                  id: variant.id,
-                  label: variantOptionText(variant, 'reasoning')
-                }))}
-                styles={styles}
-                onChange={onReasoningChange}
-              />
-            </div>
-          ) : null}
+    <div className={styles.modelCard} data-model-card>
+      <div className={styles.modelHeader}>
+        <strong className={styles.modelRole}>{roleLabel}</strong>
+        <span className={styles.modelDescription}>{roleDescription}</span>
+      </div>
+      <div className={styles.modelGrid}>
+        <div className={styles.variantField} data-model-field="model">
+          <span className={styles.variantLabel}>Model</span>
+          <Select
+            appearance="underline"
+            className={styles.underlineField}
+            aria-label={`${slotName} model`}
+            value={presetId}
+            disabled={presets.length === 0}
+            onChange={(_, data) => onPresetChange(data.value)}
+          >
+            {presetId ? null : <option value="">{placeholder}</option>}
+            {presets.map((item) => (
+              <option key={item.id} value={item.id}>{item.label}</option>
+            ))}
+          </Select>
         </div>
-      ) : null}
+        {contexts.length > 0 ? (
+          <div className={styles.variantField} data-model-field="context">
+            <span className={styles.variantLabel}>Context</span>
+            <Select
+              appearance="underline"
+              className={styles.underlineField}
+              aria-label={`${slotName} context`}
+              value={contextId}
+              onChange={(_, data) => onContextChange(data.value)}
+            >
+              {contexts.map((variant) => (
+                <option key={variant.id} value={variant.id}>{variantOptionText(variant, 'context')}</option>
+              ))}
+            </Select>
+          </div>
+        ) : null}
+        {reasoning.length > 0 ? (
+          <div className={styles.variantField} data-model-field="reasoning">
+            <span className={styles.variantLabel}>Reasoning</span>
+            <DiscreteSlider
+              label={`${slotName} reasoning`}
+              value={reasoningId}
+              choices={reasoning.map((variant) => ({
+                id: variant.id,
+                label: variantOptionText(variant, 'reasoning')
+              }))}
+              styles={styles}
+              onChange={onReasoningChange}
+            />
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function formatChoiceList(labels: string[]): string {
+  if (labels.length < 2) return labels[0] ?? '';
+  if (labels.length === 2) return labels.join(' or ');
+  return `${labels.slice(0, -1).join(', ')}, or ${labels.at(-1)}`;
+}
+
+function availabilityExplanation(prompt: Prompt, option: PromptOption): string {
+  const requirements = Object.entries(option.enabledWhen ?? {}).map(([name, choiceIds]) => {
+    const variable = prompt.variables.find((candidate) => candidate.name === name);
+    const labels = choiceIds.map((id) => variable?.choices?.find((choice) => choice.id === id)?.label ?? id);
+    return `${variable?.label ?? name} is ${formatChoiceList(labels)}`;
+  });
+  return requirements.length > 0
+    ? `Available when ${requirements.join(' and ')}.`
+    : 'Unavailable for the current workflow selections.';
+}
+
+function OptionControl({
+  prompt,
+  option,
+  checked,
+  disabled,
+  styles,
+  onChange
+}: {
+  prompt: Prompt;
+  option: PromptOption;
+  checked: boolean;
+  disabled: boolean;
+  styles: ComposerStyles;
+  onChange: (checked: boolean) => void;
+}) {
+  const reasonId = useId();
+  const reason = disabled ? availabilityExplanation(prompt, option) : undefined;
+
+  return (
+    <div className={styles.checkRow}>
+      <div className={styles.checkContent}>
+        <label className={`${styles.check} ${disabled ? styles.checkDisabled : ''}`}>
+          <input
+            type="checkbox"
+            className={styles.checkInput}
+            checked={checked}
+            disabled={disabled}
+            aria-describedby={reason ? reasonId : undefined}
+            onChange={(event) => onChange(event.target.checked)}
+          />
+          <span className={styles.checkBox} data-box aria-hidden="true"><CheckmarkRegular /></span>
+          <span className={styles.checkText}>{option.label}</span>
+        </label>
+        {reason ? <span id={reasonId} className={styles.checkReason}>{reason}</span> : null}
+      </div>
+      {option.description ? <InfoTooltip text={option.description} styles={styles} /> : null}
     </div>
   );
 }
@@ -610,7 +736,7 @@ export function Composer({ prompt, presets, issues }: Props) {
   // refresh. The presets signature ignores array identity for the same reason.
   const presetSignature = presets.map((preset) => `${preset.id}:${preset.contexts.map((v) => v.id).join(',')}:${preset.reasoning.map((v) => v.id).join(',')}`).join('|');
   const promptSignature = prompt
-    ? [prompt.key, prompt.template, JSON.stringify(prompt.variables), JSON.stringify(prompt.options), prompt.defaultModelId ?? ''].join('\u0000')
+    ? [prompt.key, prompt.template, JSON.stringify(prompt.variables), JSON.stringify(prompt.options), JSON.stringify(prompt.modelRoles), prompt.defaultModelId ?? ''].join('\u0000')
     : '';
 
   useEffect(() => {
@@ -622,8 +748,9 @@ export function Composer({ prompt, presets, issues }: Props) {
       return;
     }
     const defaultModelId = prompt.defaultModelId && presets.some((preset) => preset.id === prompt.defaultModelId) ? prompt.defaultModelId : presets[0]?.id ?? '';
-    setValues(initialVariableValues(prompt.variables));
-    setOptionValues(initialOptionValues(prompt.options));
+    const initialValues = initialVariableValues(prompt.variables);
+    setValues(initialValues);
+    setOptionValues(normalizeOptionValues(prompt, initialValues, initialOptionValues(prompt.options)));
     setModelId(promptUsesModelPlaceholder(prompt) ? defaultModelId : '');
     setRubberDuckModelId(promptUsesRubberDuckModelPlaceholder(prompt) ? defaultModelId : '');
     setFeedback(undefined);
@@ -631,6 +758,9 @@ export function Composer({ prompt, presets, issues }: Props) {
 
   const selectedPreset = useMemo(() => presets.find((preset) => preset.id === modelId), [modelId, presets]);
   const selectedRubberDuckPreset = useMemo(() => presets.find((preset) => preset.id === rubberDuckModelId), [rubberDuckModelId, presets]);
+  const defaultModelId = prompt?.defaultModelId && presets.some((preset) => preset.id === prompt.defaultModelId)
+    ? prompt.defaultModelId
+    : presets[0]?.id ?? '';
 
   // Keep each model's context and reasoning selection valid for the preset that
   // is actually selected. Presets may offer different variants, so a stale id is
@@ -661,8 +791,33 @@ export function Composer({ prompt, presets, issues }: Props) {
     if (!prompt) return [];
     if (!composition) return prompt.variables;
     const activeVariableNames = new Set(composition.activeVariableNames);
-    return prompt.variables.filter((variable) => activeVariableNames.has(variable.name));
+    return prompt.variables.filter((variable) => {
+      const state = composition.applicability.variables[variable.name];
+      return Boolean(state?.visible && (!state.enabled || activeVariableNames.has(variable.name)));
+    });
   }, [composition, prompt]);
+  const workflowVariables = useMemo(
+    () => visibleVariables.filter((variable) => variable.control === 'select' || variable.control === 'slider'),
+    [visibleVariables]
+  );
+  const contextVariables = useMemo(
+    () => visibleVariables.filter((variable) => variable.control !== 'select' && variable.control !== 'slider'),
+    [visibleVariables]
+  );
+  const visibleOptions = useMemo(() => {
+    if (!prompt) return [];
+    if (!composition) return prompt.options;
+    return prompt.options.filter((option) => composition.applicability.options[option.id]?.visible);
+  }, [composition, prompt]);
+  const usesModel = composition?.usesModelPlaceholder;
+  const usesRubberDuck = composition?.usesRubberDuckModelPlaceholder;
+
+  function updateVariable(name: string, nextValue: string) {
+    if (!prompt) return;
+    const nextValues = { ...values, [name]: nextValue };
+    setValues(nextValues);
+    setOptionValues((current) => normalizeOptionValues(prompt, nextValues, current));
+  }
 
   const isCommand = prompt?.kind === 'command';
 
@@ -693,6 +848,11 @@ export function Composer({ prompt, presets, issues }: Props) {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [copyComposedPrompt]);
 
+  useEffect(() => {
+    if (usesModel && !modelId) setModelId(defaultModelId);
+    if (usesRubberDuck && !rubberDuckModelId) setRubberDuckModelId(defaultModelId);
+  }, [defaultModelId, modelId, rubberDuckModelId, usesModel, usesRubberDuck]);
+
   if (!prompt) {
     return <Text className={styles.emptyInputs}>Select a prompt to compose it.</Text>;
   }
@@ -708,9 +868,6 @@ export function Composer({ prompt, presets, issues }: Props) {
   if (isCommand) metaItems.push('command');
   metaItems.push(visibleVariables.length > 0 ? formatCount(visibleVariables.length, 'input') : 'no inputs');
 
-
-  const usesModel = composition?.usesModelPlaceholder;
-  const usesRubberDuck = composition?.usesRubberDuckModelPlaceholder;
 
   return (
     <div className={styles.panel}>
@@ -761,26 +918,41 @@ export function Composer({ prompt, presets, issues }: Props) {
         </div>
 
         <aside className={styles.rail} aria-label="Prompt inputs">
-          {prompt.options.length > 0 ? (
+          {workflowVariables.length > 0 ? (
+            <section className={styles.section}>
+              <span className={styles.eyebrow}>Workflow</span>
+              <div className={styles.workflowFields}>
+                {workflowVariables.map((variable) => (
+                  <Field
+                    key={variable.name}
+                    variable={variable}
+                    value={values[variable.name] ?? ''}
+                    invalid={Boolean(composition?.missingRequired.includes(variable.name))}
+                    disabled={!composition?.applicability.variables[variable.name]?.enabled}
+                    styles={styles}
+                    onChange={(next) => updateVariable(variable.name, next)}
+                  />
+                ))}
+              </div>
+            </section>
+          ) : null}
+
+          {visibleOptions.length > 0 ? (
             <section className={styles.section}>
               <span className={styles.eyebrow}>Focus areas</span>
               <div className={styles.optionList}>
-                {prompt.options.map((option) => {
-                  const checked = Boolean(optionValues[option.id]);
+                {visibleOptions.map((option) => {
+                  const optionState = composition?.applicability.options[option.id];
                   return (
-                    <div key={option.id} className={styles.checkRow}>
-                      <label className={styles.check}>
-                        <input
-                          type="checkbox"
-                          className={styles.checkInput}
-                          checked={checked}
-                          onChange={(event) => setOptionValues((current) => ({ ...current, [option.id]: event.target.checked }))}
-                        />
-                        <span className={styles.checkBox} data-box aria-hidden="true"><CheckmarkRegular /></span>
-                        <span className={styles.checkText}>{option.label}</span>
-                      </label>
-                      {option.description ? <InfoTooltip text={option.description} styles={styles} /> : null}
-                    </div>
+                    <OptionControl
+                      key={option.id}
+                      prompt={prompt}
+                      option={option}
+                      checked={Boolean(composition?.effectiveOptionValues[option.id])}
+                      disabled={!optionState?.enabled}
+                      styles={styles}
+                      onChange={(checked) => setOptionValues((current) => ({ ...current, [option.id]: checked }))}
+                    />
                   );
                 })}
               </div>
@@ -789,12 +961,14 @@ export function Composer({ prompt, presets, issues }: Props) {
 
           {usesModel || usesRubberDuck ? (
             <section className={styles.section}>
-              <span className={styles.eyebrow}>Model</span>
+              <span className={styles.eyebrow}>Model guidance</span>
               <div className={styles.modelGroups}>
                 {usesModel ? (
                   <ModelGroup
                     styles={styles}
-                    name="General"
+                    slotName="General"
+                    roleLabel={prompt.modelRoles?.model?.label ?? 'General model'}
+                    roleDescription={prompt.modelRoles?.model?.description ?? 'Used by the primary model placeholder in this prompt.'}
                     presets={presets}
                     presetId={modelId}
                     preset={selectedPreset}
@@ -809,7 +983,9 @@ export function Composer({ prompt, presets, issues }: Props) {
                 {usesRubberDuck ? (
                   <ModelGroup
                     styles={styles}
-                    name="Alternative"
+                    slotName="Alternative"
+                    roleLabel={prompt.modelRoles?.rubberDuckModel?.label ?? 'Alternative model'}
+                    roleDescription={prompt.modelRoles?.rubberDuckModel?.description ?? 'Used by the alternative model placeholder in this prompt.'}
                     presets={presets}
                     presetId={rubberDuckModelId}
                     preset={selectedRubberDuckPreset}
@@ -824,25 +1000,25 @@ export function Composer({ prompt, presets, issues }: Props) {
               </div>
             </section>
           ) : null}
-          <section className={styles.section}>
-            <span className={styles.eyebrow}>Inputs</span>
-            {visibleVariables.length > 0 ? (
+
+          {contextVariables.length > 0 ? (
+            <section className={styles.section}>
+              <span className={styles.eyebrow}>Context</span>
               <div className={styles.fields}>
-                {visibleVariables.map((variable) => (
+                {contextVariables.map((variable) => (
                   <Field
                     key={variable.name}
                     variable={variable}
                     value={values[variable.name] ?? ''}
                     invalid={Boolean(composition?.missingRequired.includes(variable.name))}
+                    disabled={!composition?.applicability.variables[variable.name]?.enabled}
                     styles={styles}
-                    onChange={(next) => setValues((current) => ({ ...current, [variable.name]: next }))}
+                    onChange={(next) => updateVariable(variable.name, next)}
                   />
                 ))}
               </div>
-            ) : (
-              <Text className={styles.emptyInputs}>No inputs are needed for the current focus selection.</Text>
-            )}
-          </section>
+            </section>
+          ) : null}
 
           <details className={styles.rawDetails}>
             <summary className={styles.rawSummary}>{rawTemplateLabel}</summary>
@@ -856,7 +1032,7 @@ export function Composer({ prompt, presets, issues }: Props) {
 
 type ComposerStyles = ReturnType<typeof useStyles>;
 
-function Field({ variable, value, invalid, styles, onChange }: { variable: PromptVariable; value: string; invalid: boolean; styles: ComposerStyles; onChange: (value: string) => void }) {
+function Field({ variable, value, invalid, disabled, styles, onChange }: { variable: PromptVariable; value: string; invalid: boolean; disabled: boolean; styles: ComposerStyles; onChange: (value: string) => void }) {
   const errorId = useId();
   const choices = variable.choices ?? [];
   return (
@@ -875,6 +1051,7 @@ function Field({ variable, value, invalid, styles, onChange }: { variable: Promp
           aria-required={variable.required}
           aria-invalid={invalid || undefined}
           aria-describedby={invalid ? errorId : undefined}
+          disabled={disabled}
           onChange={(_, data) => onChange(data.value)}
         >
           {choices.map((choice) => (
@@ -887,6 +1064,7 @@ function Field({ variable, value, invalid, styles, onChange }: { variable: Promp
           value={value}
           choices={choices}
           invalid={invalid}
+          disabled={disabled}
           describedBy={invalid ? errorId : undefined}
           styles={styles}
           onChange={onChange}
@@ -900,6 +1078,7 @@ function Field({ variable, value, invalid, styles, onChange }: { variable: Promp
           aria-required={variable.required}
           aria-invalid={invalid || undefined}
           aria-describedby={invalid ? errorId : undefined}
+          disabled={disabled}
           onChange={(_, data) => onChange(data.value)}
         />
       ) : (
@@ -911,6 +1090,7 @@ function Field({ variable, value, invalid, styles, onChange }: { variable: Promp
           aria-required={variable.required}
           aria-invalid={invalid || undefined}
           aria-describedby={invalid ? errorId : undefined}
+          disabled={disabled}
           onChange={(_, data) => onChange(data.value)}
         />
       )}
@@ -924,6 +1104,7 @@ function DiscreteSlider({
   value,
   choices,
   invalid,
+  disabled,
   describedBy,
   styles,
   onChange
@@ -932,6 +1113,7 @@ function DiscreteSlider({
   value: string;
   choices: Array<{ id: string; label: string }>;
   invalid?: boolean;
+  disabled?: boolean;
   describedBy?: string;
   styles: ComposerStyles;
   onChange: (value: string) => void;
@@ -951,7 +1133,7 @@ function DiscreteSlider({
         aria-valuetext={selected?.label ?? ''}
         aria-invalid={invalid || undefined}
         aria-describedby={describedBy}
-        disabled={choices.length < 2}
+        disabled={disabled || choices.length < 2}
         onChange={(_, data) => {
           const choice = choices[data.value];
           if (choice) onChange(choice.id);

@@ -3,6 +3,7 @@ import { test, expect } from '@playwright/test';
 // The Windows clipboard normalizes line endings to CRLF on read, so both sides
 // are normalized before comparing. The composed text itself is always LF.
 const normalizeText = (value: string) => value.replace(/\r\n/g, '\n').trim();
+const composerFixture = '/tests/fixtures/composer.html';
 
 test.beforeEach(async ({ page }) => {
   await page.goto('/');
@@ -156,4 +157,84 @@ test('command prompts copy a shell ready command', async ({ page }) => {
   const preview = page.getByRole('region', { name: 'Composed command' });
   await expect(preview).toContainText('git --no-pager log --oneline --no-merges origin/main..HEAD');
   await expect(page.getByRole('button', { name: 'Copy command' })).toBeEnabled();
+});
+
+test.describe('Wave 2A composer fixture', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.goto(composerFixture);
+    await expect(page.getByRole('heading', { name: 'Wave 2A Composer Fixture' })).toBeVisible();
+  });
+
+  test('renders workflow, focus, model guidance, and context in order', async ({ page }) => {
+    const sections = page.locator('aside[aria-label="Prompt inputs"] > section > span:first-child');
+    await expect(sections).toHaveText(['Workflow', 'Focus areas', 'Model guidance', 'Context']);
+
+    await expect(page.getByLabel('Purpose')).toBeVisible();
+    await expect(page.getByRole('slider', { name: 'Analysis depth' })).toBeVisible();
+    await expect(page.getByLabel('Technical scope')).toBeVisible();
+    await expect(page.getByLabel('Intent')).toBeVisible();
+    await expect(page.getByLabel('Technical notes')).toBeVisible();
+    await expect(page.getByText('Copied as', { exact: false })).toHaveCount(0);
+    await expect(page.getByText(/routing/i)).toHaveCount(0);
+  });
+
+  test('hides inapplicable controls and clears unavailable checked options', async ({ page }) => {
+    const preview = page.getByRole('region', { name: 'Composed prompt' });
+    const scope = page.getByLabel('Technical scope');
+    const mockups = page.getByRole('checkbox', { name: 'UI mockups' });
+    const stateDiagram = page.getByRole('checkbox', { name: 'State diagram' });
+
+    await expect(mockups).toBeChecked();
+    await expect(stateDiagram).toBeDisabled();
+    await expect(stateDiagram).not.toBeChecked();
+    await expect(page.getByText('Available when Analysis depth is Deep.')).toBeVisible();
+
+    await scope.selectOption('backend');
+    await expect(mockups).toBeDisabled();
+    await expect(mockups).not.toBeChecked();
+    await expect(page.getByText('Available when Technical scope is Frontend or Full-stack.')).toBeVisible();
+    await expect(preview).not.toContainText('Include UI mockups.');
+
+    await scope.selectOption('fullStack');
+    await expect(mockups).toBeEnabled();
+    await expect(mockups).not.toBeChecked();
+    await mockups.check({ force: true });
+    await expect(preview).toContainText('Include UI mockups.');
+
+    await page.getByLabel('Purpose').selectOption('general');
+    await expect(page.getByLabel('Technical scope')).toHaveCount(0);
+    await expect(page.getByRole('checkbox', { name: 'UI mockups' })).toHaveCount(0);
+    await expect(page.getByRole('checkbox', { name: 'General summary' })).toBeVisible();
+    await expect(page.getByLabel('Technical notes')).toHaveCount(0);
+    await expect(page.getByLabel('Intent')).toBeVisible();
+  });
+
+  test('shows active prompt-specific model roles and preserves independent selections', async ({ page }) => {
+    const preview = page.getByRole('region', { name: 'Composed prompt' });
+    const general = page.getByLabel('General model');
+    const alternative = page.getByLabel('Alternative model');
+    const executionCard = page.locator('[data-model-card]').filter({ hasText: 'Approved execution model' });
+    const reviewCard = page.locator('[data-model-card]').filter({ hasText: 'Planning and review model' });
+
+    await expect(executionCard).toContainText('Used by approved implementation workers.');
+    await expect(reviewCard).toContainText('Used by reviewers that critique execution waves.');
+
+    await general.selectOption('opus-5');
+    await alternative.selectOption('gpt-5-6-sol');
+    await page.getByLabel('General context').selectOption('standard');
+    await page.getByRole('slider', { name: 'Alternative reasoning' }).press('End');
+    await expect(preview).toContainText('Use Opus 5 medium reasoning for approved implementation work.');
+    await expect(preview).toContainText('Use GPT-5.6 Sol 1M context high reasoning to review full-stack integration.');
+
+    await page.getByLabel('Technical scope').selectOption('backend');
+    await expect(page.getByLabel('General model')).toHaveValue('opus-5');
+    await expect(page.getByLabel('Alternative model')).toHaveCount(0);
+
+    await page.getByLabel('Technical scope').selectOption('fullStack');
+    await expect(page.getByLabel('General model')).toHaveValue('opus-5');
+    await expect(page.getByLabel('Alternative model')).toHaveValue('gpt-5-6-sol');
+
+    await page.getByLabel('Purpose').selectOption('general');
+    await expect(page.getByText('Model guidance', { exact: true })).toHaveCount(0);
+  });
 });

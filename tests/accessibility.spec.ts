@@ -1,6 +1,8 @@
 import { test, expect } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 
+const composerFixture = '/tests/fixtures/composer.html';
+
 // The Windows clipboard normalizes line endings to CRLF on read, so both sides
 // are normalized before comparing. The composed text itself is always LF.
 const normalizeText = (value: string) => value.replace(/\r\n/g, '\n').trim();
@@ -68,4 +70,42 @@ test('the info tooltip is a button that opens on focus and closes on Escape', as
 
   await page.keyboard.press('Escape');
   await expect(page.getByRole('tooltip')).toHaveCount(0);
+});
+
+test('conditional Composer controls are accessible by keyboard and screen reader', async ({ page }) => {
+  await page.goto(composerFixture);
+  const purpose = page.getByLabel('Purpose');
+  await purpose.focus();
+  await expect(purpose).toBeFocused();
+
+  await page.keyboard.press('Tab');
+  await expect(page.getByRole('slider', { name: 'Analysis depth' })).toBeFocused();
+  await page.keyboard.press('End');
+  await expect(page.getByRole('slider', { name: 'Analysis depth' })).toHaveAttribute('aria-valuetext', 'Deep');
+
+  await page.getByLabel('Technical scope').selectOption('backend');
+  const unavailable = page.getByRole('checkbox', { name: 'UI mockups' });
+  await expect(unavailable).toBeDisabled();
+  await expect(unavailable).toHaveAttribute('aria-describedby');
+  await expect(page.getByText('Available when Technical scope is Frontend or Full-stack.')).toBeVisible();
+
+  await page.getByLabel('Technical scope').focus();
+  await page.keyboard.press('Tab');
+  await expect(page.getByRole('button', { name: 'Include visual interaction states.' })).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(page.getByRole('checkbox', { name: 'API / data-flow diagram' })).toBeFocused();
+
+  await purpose.selectOption('general');
+  await expect(page.getByLabel('Technical scope')).toHaveCount(0);
+  await expect(page.getByRole('checkbox', { name: 'UI mockups' })).toHaveCount(0);
+});
+
+test('conditional and disabled Composer states have no serious or critical violations', async ({ page }) => {
+  await page.goto(composerFixture);
+  await page.getByLabel('Technical scope').selectOption('backend');
+
+  const results = await new AxeBuilder({ page }).analyze();
+  const blocking = results.violations.filter((v) => v.impact === 'serious' || v.impact === 'critical');
+  const summary = blocking.map((v) => ({ id: v.id, impact: v.impact, nodes: v.nodes.length }));
+  expect(summary, JSON.stringify(summary, null, 2)).toEqual([]);
 });

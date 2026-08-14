@@ -1,23 +1,18 @@
-import { test } from '@playwright/test';
+import { test, expect } from '@playwright/test';
 
 const fontsReady = () => (document as unknown as { fonts: { ready: Promise<unknown> } }).fonts.ready;
+const composerFixture = '/tests/fixtures/composer.html';
 
-test('captures the desktop screenshot for the README', async ({ page }) => {
+test('captures the Wave 2A desktop Composer fixture', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
-  await page.goto('/');
-  await page.getByRole('button', { name: 'Review a Pull Request' }).click();
-  await page.getByLabel('pullRequest', { exact: true }).fill('https://github.com/acme/checkout/pull/482');
-  await page.getByLabel('intent', { exact: true }).fill('Adds idempotency keys to the payment capture endpoint.');
-  await page.getByLabel('Alternative model').selectOption('opus-5');
+  await page.goto(composerFixture);
   await page.evaluate(fontsReady);
-  await page.waitForTimeout(500);
-  await page.screenshot({ path: 'docs/screenshot.png' });
+  await expect(page).toHaveScreenshot('composer-wave2a-desktop.png', { animations: 'disabled', fullPage: true });
 });
 
-test('captures the mobile screenshot for the README', async ({ page }) => {
+test('captures the Wave 2A narrow Composer fixture', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto('/');
+  await page.goto(composerFixture);
   await page.evaluate(fontsReady);
-  await page.waitForTimeout(500);
-  await page.screenshot({ path: 'docs/screenshot-mobile.png', fullPage: true });
+  await expect(page).toHaveScreenshot('composer-wave2a-narrow.png', { animations: 'disabled', fullPage: true });
 });
