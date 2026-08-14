@@ -1,6 +1,6 @@
-import { Input, Select, Slider, Text, Textarea, makeStyles } from '@fluentui/react-components';
+import { Input, Select, Slider, Text, Textarea, Tooltip, makeStyles } from '@fluentui/react-components';
 import { CheckmarkRegular, CheckmarkCircleRegular, ErrorCircleRegular, InfoRegular } from '@fluentui/react-icons';
-import { useCallback, useEffect, useId, useMemo, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useState, type ReactNode } from 'react';
 import { composeModelLabel, composePrompt, initialOptionValues, initialVariableValues, normalizeOptionValues, promptUsesModelPlaceholder, promptUsesRubberDuckModelPlaceholder, type OptionValues, type VariableValues } from '../data/composer';
 import type { ModelPreset, ModelPresetVariant, Prompt, PromptOption, PromptVariable, ValidationIssue } from '../data/schemas';
 import { formatCount, shortcutModifier, shouldUseTextarea } from './promptUi';
@@ -222,6 +222,7 @@ const useStyles = makeStyles({
     gap: '24px',
     alignContent: 'start',
     minWidth: 0,
+    containerType: 'inline-size',
     '@media (min-width: 1101px)': {
       minHeight: 0,
       overflowY: 'auto',
@@ -256,12 +257,10 @@ const useStyles = makeStyles({
     display: 'flex',
     alignItems: 'flex-start',
     gap: '8px',
-    minWidth: 0
-  },
-  checkContent: {
-    display: 'grid',
-    gap: '2px',
-    minWidth: 0
+    minWidth: 0,
+    '& > [data-help-trigger]': {
+      marginTop: '6px'
+    }
   },
   check: {
     display: 'inline-flex',
@@ -329,13 +328,6 @@ const useStyles = makeStyles({
     lineHeight: 1.3,
     color: 'var(--sw-ink)'
   },
-  checkReason: {
-    marginLeft: '30px',
-    fontFamily: 'var(--sw-sans)',
-    fontSize: '11px',
-    lineHeight: 1.35,
-    color: 'var(--sw-muted)'
-  },
   fields: {
     display: 'grid',
     gap: '20px'
@@ -346,22 +338,27 @@ const useStyles = makeStyles({
     gap: '18px',
     '@media (max-width: 640px)': {
       gridTemplateColumns: '1fr'
+    },
+    '@container (max-width: 410px)': {
+      gridTemplateColumns: '1fr'
     }
   },
   modelGroups: {
     display: 'grid',
-    gap: '14px'
+    gap: 0,
+    '& > [data-model-card] + [data-model-card]': {
+      borderTop: '1px solid var(--sw-rule)',
+      marginTop: '16px',
+      paddingTop: '16px'
+    }
   },
   modelCard: {
     display: 'grid',
     gap: '12px',
-    padding: '14px',
-    border: '1px solid var(--sw-rule)',
-    backgroundColor: 'var(--sw-panel)'
+    minWidth: 0
   },
   modelHeader: {
-    display: 'grid',
-    gap: '4px'
+    minWidth: 0
   },
   modelRole: {
     fontFamily: 'var(--sw-sans)',
@@ -369,12 +366,6 @@ const useStyles = makeStyles({
     fontWeight: 700,
     lineHeight: 1.3,
     color: 'var(--sw-ink)'
-  },
-  modelDescription: {
-    fontFamily: 'var(--sw-sans)',
-    fontSize: '12px',
-    lineHeight: 1.4,
-    color: 'var(--sw-muted)'
   },
   modelGrid: {
     display: 'grid',
@@ -401,12 +392,19 @@ const useStyles = makeStyles({
   },
   field: {
     display: 'grid',
-    gap: '8px'
+    gap: '8px',
+    minWidth: 0
   },
-  fieldLabel: {
+  helpLabel: {
     display: 'inline-flex',
     alignItems: 'center',
-    gap: '6px'
+    gap: '6px',
+    minWidth: 0,
+    width: 'fit-content',
+    maxWidth: '100%'
+  },
+  titleHelpLabel: {
+    alignItems: 'baseline'
   },
   labelText: {
     fontFamily: 'var(--sw-mono)',
@@ -430,13 +428,21 @@ const useStyles = makeStyles({
   },
   underlineField: {
     width: '100%',
+    minWidth: 0,
+    maxWidth: '100%',
+    boxSizing: 'border-box',
     backgroundColor: 'transparent',
     '& input': {
+      minWidth: 0,
+      maxWidth: '100%',
       fontFamily: 'var(--sw-sans)',
       fontSize: '14px',
       color: 'var(--sw-ink)'
     },
     '& select': {
+      width: '100%',
+      minWidth: 0,
+      maxWidth: '100%',
       fontFamily: 'var(--sw-sans)',
       fontSize: '14px',
       color: 'var(--sw-ink)'
@@ -500,12 +506,6 @@ const useStyles = makeStyles({
     lineHeight: 1.6,
     color: 'var(--sw-ink)'
   },
-  // info tooltip
-  infoWrap: {
-    position: 'relative',
-    display: 'inline-flex',
-    alignItems: 'center'
-  },
   infoTrigger: {
     display: 'inline-flex',
     alignItems: 'center',
@@ -526,22 +526,29 @@ const useStyles = makeStyles({
       outlineOffset: '2px'
     }
   },
-  infoBubble: {
-    position: 'absolute',
-    zIndex: 30,
-    bottom: 'calc(100% + 6px)',
-    left: '50%',
-    transform: 'translateX(-50%)',
-    width: 'max-content',
+  tooltipContent: {
     maxWidth: '260px',
-    padding: '10px 12px',
+    padding: '8px 10px',
     border: 'none',
+    borderRadius: '2px',
     backgroundColor: 'var(--sw-ink)',
     color: '#ffffff',
     fontFamily: 'var(--sw-sans)',
     fontSize: '12px',
     lineHeight: 1.45,
-    whiteSpace: 'normal'
+    whiteSpace: 'normal',
+    filter: 'drop-shadow(0 4px 10px rgba(21, 20, 15, 0.2))'
+  },
+  visuallyHidden: {
+    position: 'absolute',
+    width: '1px',
+    height: '1px',
+    padding: 0,
+    margin: '-1px',
+    overflow: 'hidden',
+    clip: 'rect(0 0 0 0)',
+    whiteSpace: 'nowrap',
+    border: 0
   }
 });
 
@@ -611,8 +618,14 @@ function ModelGroup({
       aria-describedby={roleDescription ? roleDescriptionId : undefined}
     >
       <div className={styles.modelHeader}>
-        <strong id={roleLabelId} className={styles.modelRole}>{roleLabel}</strong>
-        <span id={roleDescriptionId} className={styles.modelDescription}>{roleDescription}</span>
+        <HelpLabel
+          styles={styles}
+          helpText={roleDescription}
+          triggerLabel={`About ${roleLabel}`}
+        >
+          <strong id={roleLabelId} className={styles.modelRole}>{roleLabel}</strong>
+        </HelpLabel>
+        <span id={roleDescriptionId} className={styles.visuallyHidden}>{roleDescription}</span>
       </div>
       <div className={styles.modelGrid}>
         <div className={styles.variantField} data-model-field="model">
@@ -701,25 +714,24 @@ function OptionControl({
 }) {
   const reasonId = useId();
   const reason = disabled ? availabilityExplanation(prompt, option) : undefined;
+  const helpText = [option.description, reason].filter(Boolean).join(' ');
 
   return (
-    <div className={styles.checkRow}>
-      <div className={styles.checkContent}>
-        <label className={`${styles.check} ${disabled ? styles.checkDisabled : ''}`}>
-          <input
-            type="checkbox"
-            className={styles.checkInput}
-            checked={checked}
-            disabled={disabled}
-            aria-describedby={reason ? reasonId : undefined}
-            onChange={(event) => onChange(event.target.checked)}
-          />
-          <span className={styles.checkBox} data-box aria-hidden="true"><CheckmarkRegular /></span>
-          <span className={styles.checkText}>{option.label}</span>
-        </label>
-        {reason ? <span id={reasonId} className={styles.checkReason}>{reason}</span> : null}
-      </div>
-      {option.description ? <InfoTooltip text={option.description} styles={styles} /> : null}
+    <div className={styles.checkRow} data-option-control={option.id}>
+      <label className={`${styles.check} ${disabled ? styles.checkDisabled : ''}`}>
+        <input
+          type="checkbox"
+          className={styles.checkInput}
+          checked={checked}
+          disabled={disabled}
+          aria-describedby={reason ? reasonId : undefined}
+          onChange={(event) => onChange(event.target.checked)}
+        />
+        <span className={styles.checkBox} data-box aria-hidden="true"><CheckmarkRegular /></span>
+        <span className={styles.checkText}>{option.label}</span>
+      </label>
+      {helpText ? <HelpTooltip text={helpText} triggerLabel={`About ${option.label}`} styles={styles} /> : null}
+      {reason ? <span id={reasonId} className={styles.visuallyHidden}>{reason}</span> : null}
     </div>
   );
 }
@@ -881,8 +893,14 @@ export function Composer({ prompt, presets, issues }: Props) {
     <div className={styles.panel}>
       <div className={styles.header}>
         <div className={styles.titleRow}>
-          <h2 className={styles.title}>{prompt.title}</h2>
-          {prompt.description ? <InfoTooltip text={prompt.description} styles={styles} /> : null}
+          <HelpLabel
+            styles={styles}
+            className={styles.titleHelpLabel}
+            helpText={prompt.description}
+            triggerLabel="About this prompt"
+          >
+            <h2 className={styles.title}>{prompt.title}</h2>
+          </HelpLabel>
           <span className={styles.metaRow}>
             {metaItems.map((item, index) => (
               <span key={item} style={{ display: 'inline-flex', alignItems: 'center', gap: '14px' }}>
@@ -1045,11 +1063,14 @@ function Field({ variable, value, invalid, disabled, styles, onChange }: { varia
   const choices = variable.choices ?? [];
   return (
     <div className={styles.field}>
-      <span className={styles.fieldLabel}>
+      <HelpLabel
+        styles={styles}
+        helpText={variable.description}
+        triggerLabel={`About ${variable.label}`}
+      >
         <span className={styles.labelText}>{variable.label}</span>
         {variable.required ? <span className={styles.req} aria-hidden="true">*</span> : null}
-        {variable.description ? <InfoTooltip text={variable.description} styles={styles} /> : null}
-      </span>
+      </HelpLabel>
       {variable.control === 'select' ? (
         <Select
           appearance="underline"
@@ -1152,21 +1173,38 @@ function DiscreteSlider({
   );
 }
 
-function InfoTooltip({ text, styles }: { text: string; styles: ComposerStyles }) {
-  const [open, setOpen] = useState(false);
-  const bubbleId = useId();
-
+function HelpLabel({
+  children,
+  helpText,
+  triggerLabel,
+  styles,
+  className
+}: {
+  children: ReactNode;
+  helpText?: string;
+  triggerLabel: string;
+  styles: ComposerStyles;
+  className?: string;
+}) {
   return (
-    <span
-      className={styles.infoWrap}
-      onBlur={() => setOpen(false)}
-      onFocus={() => setOpen(true)}
-      onMouseEnter={() => setOpen(true)}
-      onMouseLeave={() => setOpen(false)}
-      onKeyDown={(event) => { if (event.key === 'Escape') setOpen(false); }}
+    <div className={`${styles.helpLabel} ${className ?? ''}`}>
+      {children}
+      {helpText ? <HelpTooltip text={helpText} triggerLabel={triggerLabel} styles={styles} /> : null}
+    </div>
+  );
+}
+
+function HelpTooltip({ text, triggerLabel, styles }: { text: string; triggerLabel: string; styles: ComposerStyles }) {
+  return (
+    <Tooltip
+      content={{ children: text, className: styles.tooltipContent }}
+      relationship="description"
+      positioning={{ position: 'above', align: 'center', offset: 8 }}
+      withArrow
     >
-      <button type="button" className={styles.infoTrigger} aria-label={text} aria-describedby={open ? bubbleId : undefined}><InfoRegular /></button>
-      {open ? <span id={bubbleId} className={styles.infoBubble} role="tooltip">{text}</span> : null}
-    </span>
+      <button type="button" className={styles.infoTrigger} aria-label={triggerLabel} data-help-trigger>
+        <InfoRegular aria-hidden="true" />
+      </button>
+    </Tooltip>
   );
 }

@@ -11,27 +11,81 @@ import { Composer } from '../../src/components/Composer';
 import type { ModelPreset, Prompt } from '../../src/data/schemas';
 
 const prompt: Prompt = {
-  id: 'wave-2a-composer-fixture',
-  key: 'fixture:wave-2a-composer',
-  title: 'Wave 2A Composer Fixture',
+  id: 'wave-1a-composer-fixture',
+  key: 'fixture:wave-1a-composer',
+  title: 'Wave 1A Composer Fixture',
   description: 'Exercises conditional workflow controls, focus areas, and model roles.',
   category: 'planning',
   kind: 'prompt',
   tags: ['fixture'],
   source: 'folder',
   sourceLabel: 'Test fixture',
-  path: 'tests/fixtures/wave-2a.md',
+  path: 'tests/fixtures/wave-1a.md',
   defaultModelId: 'gpt-5-6-sol',
   variables: [
     {
       name: 'purpose',
       label: 'Purpose',
+      description: 'Chooses the kind of plan this prompt should produce.',
       required: true,
       control: 'select',
       defaultValue: 'technical',
       choices: [
         { id: 'general', label: 'General analysis' },
         { id: 'technical', label: 'Technical design' }
+      ]
+    },
+    {
+      name: 'deliveryWorkflow',
+      label: 'Delivery workflow',
+      description: 'Chooses how approved work moves through review and handoff.',
+      required: true,
+      control: 'select',
+      defaultValue: 'staged',
+      visibleWhen: { purpose: ['technical'] },
+      choices: [
+        { id: 'direct', label: 'Direct implementation' },
+        { id: 'staged', label: 'Staged delivery with approval gates' }
+      ]
+    },
+    {
+      name: 'technicalScope',
+      label: 'Technical scope',
+      description: 'Sets the implementation surface covered by the plan.',
+      required: true,
+      control: 'select',
+      defaultValue: 'fullStack',
+      visibleWhen: { purpose: ['technical'] },
+      choices: [
+        { id: 'frontend', label: 'Frontend' },
+        { id: 'backend', label: 'Backend' },
+        { id: 'fullStack', label: 'Full-stack' }
+      ]
+    },
+    {
+      name: 'topology',
+      label: 'Topology',
+      description: 'Chooses whether work stays together or splits into coordinated streams.',
+      required: true,
+      control: 'select',
+      defaultValue: 'parallel',
+      visibleWhen: { purpose: ['technical'] },
+      choices: [
+        { id: 'single', label: 'Single workstream' },
+        { id: 'parallel', label: 'Coordinated parallel workstreams' }
+      ]
+    },
+    {
+      name: 'execution',
+      label: 'Execution',
+      description: 'Chooses who carries out the approved implementation plan.',
+      required: true,
+      control: 'select',
+      defaultValue: 'workers',
+      visibleWhen: { purpose: ['technical'] },
+      choices: [
+        { id: 'current', label: 'Current session' },
+        { id: 'workers', label: 'Independent implementation workers' }
       ]
     },
     {
@@ -44,19 +98,6 @@ const prompt: Prompt = {
         { id: 'brief', label: 'Brief' },
         { id: 'focused', label: 'Focused' },
         { id: 'deep', label: 'Deep' }
-      ]
-    },
-    {
-      name: 'technicalScope',
-      label: 'Technical scope',
-      required: true,
-      control: 'select',
-      defaultValue: 'fullStack',
-      visibleWhen: { purpose: ['technical'] },
-      choices: [
-        { id: 'frontend', label: 'Frontend' },
-        { id: 'backend', label: 'Backend' },
-        { id: 'fullStack', label: 'Full-stack' }
       ]
     },
     {
@@ -78,7 +119,7 @@ const prompt: Prompt = {
   options: [
     {
       id: 'uiMockups',
-      label: 'UI mockups',
+      label: 'UI mockups and recovery-state interactions',
       description: 'Include visual interaction states.',
       defaultEnabled: true,
       visibleWhen: { purpose: ['technical'] },
@@ -87,6 +128,7 @@ const prompt: Prompt = {
     {
       id: 'apiFlow',
       label: 'API / data-flow diagram',
+      description: 'Include service boundaries and important data movement.',
       defaultEnabled: true,
       visibleWhen: { purpose: ['technical'] }
     },
@@ -118,6 +160,7 @@ const prompt: Prompt = {
     'Intent: {{intent}}',
     '{{#when purpose general}}General analysis.{{/when}}',
     '{{#when purpose technical}}Technical design for {{technicalScope}} at {{depth}} depth.',
+    'Delivery: {{deliveryWorkflow}} across {{topology}} with {{execution}}.',
     'Use {{model}} for approved implementation work.',
     'Technical notes: {{technicalNotes}}{{/when}}',
     '{{#when purpose technical technicalScope fullStack}}Use {{rubberDuckModel}} to review full-stack integration.{{/when}}',
