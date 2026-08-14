@@ -6,7 +6,7 @@ A prompt you rely on tends to exist in a dozen slightly different forms: copies 
 
 Prompt Bank keeps the canonical version in a Markdown file and declares the parts that change as inputs, dropdowns, sliders, and optional sections. The app turns that file into a form: choose the workflow, set the intensity, toggle additive sections, watch the composed text update, then paste it into whichever AI tool you already use.
 
-![The Prompt Bank v0.5.1 interface](docs/screenshot-v051.png)
+![The Prompt Bank v0.5.2 interface](docs/screenshot-v052.png)
 
 Because prompts are plain files, they stay yours. You can diff them, grep them, and commit them alongside the project they belong to, with no account and nothing to export if you walk away. Keep a personal set in `~/.prompt-bank/`, and a project specific set in any folder you open. Prompt Bank composes the text and hands it to your clipboard; it does not call a model or send your prompts anywhere.
 
