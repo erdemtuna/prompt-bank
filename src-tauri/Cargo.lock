@@ -2309,7 +2309,7 @@ dependencies = [
 
 [[package]]
 name = "prompt-bank-desktop"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "prompt-bank-core",
  "serde",
