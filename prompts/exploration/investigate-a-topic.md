@@ -125,7 +125,7 @@ Ground every claim in something you actually read. When you state how the system
 - Brainstorm: map the option space, including non-obvious directions. Keep promising paths open rather than narrowing to one. For each, give the tradeoff that actually decides it. Close with a short pursue, park, or drop decision set.
 {{/when}}
 {{#when purpose technicalDesign technicalScope infer}}
-- Design scope — infer: determine the affected technical surface from inspected evidence. State the inferred boundaries and assumptions, and include a structural architecture view when the relevant parts and ownership are not already obvious.
+- Design scope — infer: determine the affected technical surface from inspected evidence. State the inferred boundaries, ownership, and assumptions in prose.
 {{/when}}
 {{#when purpose technicalDesign technicalScope frontend}}
 - Design scope — frontend: cover interaction states, feature modules, shared state, design system boundaries, client services, accessibility, responsiveness, and integration boundaries.

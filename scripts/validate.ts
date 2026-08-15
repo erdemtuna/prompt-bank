@@ -81,18 +81,18 @@ function validateCompositionMatrix(
       sourceLabel: 'Folder',
       key: `matrix:${parsedPrompt.path}`
     };
-    const promptCombinationCount = effectiveMatrixCardinality(prompt);
-    combinationCount += promptCombinationCount;
-    if (promptCombinationCount > 4096) {
+    const cardinality = effectiveMatrixCardinality(prompt, 4096);
+    if (cardinality.exceededLimit) {
       matrixIssues.push({
         scope: 'prompt',
         path: prompt.path,
-        message: `Effective composition matrix has ${promptCombinationCount} combinations, exceeding the 4096 safety limit.`
+        message: 'Effective composition matrix exceeds the 4096 safety limit.'
       });
       continue;
     }
+    combinationCount += cardinality.count;
 
-    for (const { values, optionValues } of effectiveCompositionStates(prompt)) {
+    for (const { values, optionValues } of effectiveCompositionStates(prompt, cardinality.count)) {
       const result = composePrompt(
         prompt,
         values,

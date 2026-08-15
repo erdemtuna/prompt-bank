@@ -14,52 +14,97 @@ export type EffectiveCompositionState = {
   optionValues: OptionValues;
 };
 
-export function effectiveMatrixCardinality(prompt: ParsedPrompt): number {
-  return effectiveVariableCombinations(prompt).reduce((count, values) => {
+export type EffectiveMatrixCardinality = {
+  count: number;
+  exceededLimit: boolean;
+};
+
+export function effectiveMatrixCardinality(
+  prompt: ParsedPrompt,
+  limit: number
+): EffectiveMatrixCardinality {
+  validateLimit(limit);
+  let count = 0;
+
+  for (const values of effectiveVariableCombinations(prompt)) {
     const applicability = evaluatePromptApplicability(prompt, values);
     const optionCount = prompt.options.filter((option) => {
       const state = applicability.options[option.id];
       return state?.visible && state.enabled;
     }).length;
-    return count + (2 ** optionCount);
-  }, 0);
-}
-
-export function effectiveCompositionStates(prompt: ParsedPrompt): EffectiveCompositionState[] {
-  return effectiveVariableCombinations(prompt).flatMap((values) =>
-    effectiveOptionCombinations(prompt, values).map((optionValues) => ({ values, optionValues }))
-  );
-}
-
-function effectiveVariableCombinations(prompt: ParsedPrompt): VariableValues[] {
-  let states: VariableValues[] = [initialVariableValues(prompt.variables)];
-
-  for (const variable of variablesInApplicabilityOrder(prompt.variables)) {
-    states = states.flatMap((state) => {
-      const applicability = evaluatePromptApplicability(prompt, state).variables[variable.name];
-      if (!applicability?.visible || !applicability.enabled) return [state];
-      return matrixValues(variable).map((value) => ({ ...state, [variable.name]: value }));
-    });
+    const stateCount = 2 ** optionCount;
+    if (!Number.isSafeInteger(stateCount) || stateCount > limit - count) {
+      return { count: limit, exceededLimit: true };
+    }
+    count += stateCount;
   }
 
-  return states;
+  return { count, exceededLimit: false };
 }
 
-function effectiveOptionCombinations(prompt: ParsedPrompt, values: VariableValues): OptionValues[] {
+export function* effectiveCompositionStates(
+  prompt: ParsedPrompt,
+  limit: number
+): Generator<EffectiveCompositionState> {
+  validateLimit(limit);
+  let count = 0;
+
+  for (const values of effectiveVariableCombinations(prompt)) {
+    for (const optionValues of effectiveOptionCombinations(prompt, values)) {
+      if (count >= limit) return;
+      count += 1;
+      yield { values, optionValues };
+    }
+  }
+}
+
+function* effectiveVariableCombinations(prompt: ParsedPrompt): Generator<VariableValues> {
+  const variables = variablesInApplicabilityOrder(prompt.variables);
+
+  function* visit(index: number, state: VariableValues): Generator<VariableValues> {
+    if (index >= variables.length) {
+      yield state;
+      return;
+    }
+
+    const variable = variables[index];
+    const applicability = evaluatePromptApplicability(prompt, state).variables[variable.name];
+    if (!applicability?.visible || !applicability.enabled) {
+      yield* visit(index + 1, state);
+      return;
+    }
+
+    for (const value of matrixValues(variable)) {
+      yield* visit(index + 1, { ...state, [variable.name]: value });
+    }
+  }
+
+  yield* visit(0, initialVariableValues(prompt.variables));
+}
+
+function* effectiveOptionCombinations(
+  prompt: ParsedPrompt,
+  values: VariableValues
+): Generator<OptionValues> {
   const applicability = evaluatePromptApplicability(prompt, values);
   const disabledOptions = Object.fromEntries(prompt.options.map((option) => [option.id, false]));
-  let states: OptionValues[] = [disabledOptions];
+  const availableOptions = prompt.options.filter((option) => {
+    const state = applicability.options[option.id];
+    return state?.visible && state.enabled;
+  });
 
-  for (const option of prompt.options) {
-    const optionState = applicability.options[option.id];
-    if (!optionState?.visible || !optionState.enabled) continue;
-    states = states.flatMap((state) => [
-      { ...state, [option.id]: false },
-      { ...state, [option.id]: true }
-    ]);
+  function* visit(index: number, state: OptionValues): Generator<OptionValues> {
+    if (index >= availableOptions.length) {
+      yield state;
+      return;
+    }
+
+    const option = availableOptions[index];
+    yield* visit(index + 1, { ...state, [option.id]: false });
+    yield* visit(index + 1, { ...state, [option.id]: true });
   }
 
-  return states;
+  yield* visit(0, disabledOptions);
 }
 
 function variablesInApplicabilityOrder(variables: PromptVariable[]): PromptVariable[] {
@@ -90,4 +135,10 @@ function matrixValues(variable: PromptVariable): string[] {
     return (variable.choices ?? []).map((choice) => choice.id);
   }
   return [variable.defaultValue ?? `test-${variable.name}`];
+}
+
+function validateLimit(limit: number): void {
+  if (!Number.isSafeInteger(limit) || limit < 0) {
+    throw new RangeError('Composition matrix limit must be a non-negative safe integer.');
+  }
 }

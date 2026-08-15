@@ -145,6 +145,19 @@ describe('Wave 2B built-in prompts', () => {
     }
   });
 
+  it('does not request architecture output when infer scope has all artifacts disabled', () => {
+    const prompt = builtinPrompt('investigate-a-topic');
+    const result = compose(
+      prompt,
+      { purpose: 'technicalDesign', technicalScope: 'infer' },
+      selectOptions(prompt)
+    );
+
+    expect(result.text).not.toContain('System architecture:');
+    expect(result.text).not.toMatch(/\b(?:include|provide|show|create|produce)\b[^\n.]*\barchitecture(?: diagram| view)\b/i);
+    expect(result.text).toContain('State the inferred boundaries, ownership, and assumptions in prose.');
+  });
+
   it('separates static architecture, runtime sequence, process flow, and data movement', () => {
     const prompt = builtinPrompt('investigate-a-topic');
     const result = compose(
@@ -168,10 +181,9 @@ describe('Wave 2B built-in prompts', () => {
 
   it('keeps the effective investigation matrix below the unchanged safety limit', () => {
     const prompt = builtinPrompt('investigate-a-topic');
-    const combinationCount = effectiveMatrixCardinality(prompt);
+    const cardinality = effectiveMatrixCardinality(prompt, 4096);
 
-    expect(combinationCount).toBe(1164);
-    expect(combinationCount).toBeLessThan(4096);
+    expect(cardinality).toEqual({ count: 1164, exceededLimit: false });
   });
 
   it('keeps implementation planning scope-aware without recreating technical design', () => {
