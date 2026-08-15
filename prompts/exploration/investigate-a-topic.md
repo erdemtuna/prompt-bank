@@ -57,6 +57,12 @@ options:
   - id: parallelAgents
     label: Parallel agents
     description: Split the investigation across agents working on separate threads.
+  - id: systemArchitecture
+    label: System architecture
+    description: Show major parts, responsibilities, boundaries, and static dependencies.
+    default: false
+    visible_when:
+      purpose: [technicalDesign]
   - id: uiMockups
     label: UI mockups
     description: Include mockups for important interface states.
@@ -77,14 +83,14 @@ options:
     default: false
     visible_when:
       purpose: [technicalDesign]
-  - id: useCaseActivityDiagram
-    label: Use-case or activity diagram
-    description: Show actors, decisions, and workflow paths.
+  - id: activityWorkflowDiagram
+    label: Activity/workflow diagram
+    description: Show actors, decisions, branches, and process paths.
     default: false
     visible_when:
       purpose: [technicalDesign]
   - id: apiDataFlowDiagram
-    label: API or data-flow diagram
+    label: API/data-flow diagram
     description: Show contracts and movement of data across boundaries.
     default: false
     visible_when:
@@ -119,18 +125,21 @@ Ground every claim in something you actually read. When you state how the system
 - Brainstorm: map the option space, including non-obvious directions. Keep promising paths open rather than narrowing to one. For each, give the tradeoff that actually decides it. Close with a short pursue, park, or drop decision set.
 {{/when}}
 {{#when purpose technicalDesign technicalScope infer}}
-- Design scope — infer: determine the affected technical surface from inspected evidence. State the inferred boundaries and assumptions before describing the strongest design direction.
+- Design scope — infer: determine the affected technical surface from inspected evidence. State the inferred boundaries and assumptions, and include a structural architecture view when the relevant parts and ownership are not already obvious.
 {{/when}}
 {{#when purpose technicalDesign technicalScope frontend}}
-- Design scope — frontend: cover interaction states, component boundaries, client-side state, accessibility, responsiveness, and integration points with existing services.
+- Design scope — frontend: cover interaction states, feature modules, shared state, design system boundaries, client services, accessibility, responsiveness, and integration boundaries.
 {{/when}}
 {{#when purpose technicalDesign technicalScope backend}}
-- Design scope — backend: cover APIs, domain state, persistence, failure handling, security boundaries, observability, and relevant data flows.
+- Design scope — backend: cover domains, services, APIs, queues, storage, integrations, failure handling, observability, and security or ownership boundaries.
 {{/when}}
 {{#when purpose technicalDesign technicalScope fullStack}}
-- Design scope — full-stack: cover frontend and backend responsibilities, contract ownership, shared state, end-to-end integration, failure boundaries, and delivery sequencing.
+- Design scope — full-stack: cover clients and backend components, contract ownership, state ownership, end-to-end boundaries, failure handling, and delivery sequencing.
 {{/when}}
 
+{{#option systemArchitecture}}
+- System architecture: include a static structural view of the major components, modules, or services, their responsibilities, boundaries, and static dependencies. Emphasize who owns or depends on whom. Do not use this view for runtime message order or data payload movement. Decompose a component further only where a boundary materially affects the design. If the design changes an existing system, distinguish added, changed, and removed parts; for a greenfield system, show only the proposed architecture and do not invent an existing baseline.
+{{/option}}
 {{#option uiMockups}}
 - UI mockups: include low-fidelity mockups for the important default, loading, empty, error, and narrow-width states. Keep them tied to the proposed interaction rather than visual polish.
 {{/option}}
@@ -138,19 +147,20 @@ Ground every claim in something you actually read. When you state how the system
 - State diagram: include a diagram of meaningful states, transitions, guards, and failure or recovery paths.
 {{/option}}
 {{#option sequenceDiagram}}
-- Sequence diagram: include a diagram showing participant ownership, call order, asynchronous boundaries, and failure responses.
+- Sequence diagram: include a diagram showing participant ownership, runtime message order, asynchronous boundaries, timing where relevant, and failure responses.
 {{/option}}
-{{#option useCaseActivityDiagram}}
-- Use-case or activity diagram: include a diagram showing actors, decisions, alternate paths, and completion conditions.
+{{#option activityWorkflowDiagram}}
+- Activity/workflow diagram: include a diagram showing actors, process steps, decisions, branches, alternate paths, and completion conditions. Use it for process and decision flow, not runtime message order or timing.
 {{/option}}
 {{#option apiDataFlowDiagram}}
-- API or data-flow diagram: include a diagram showing contracts, trust boundaries, transformations, storage, and movement of data.
+- API/data-flow diagram: include a diagram showing contracts, trust boundaries, transformations, storage, and movement of data.
 {{/option}}
 {{#allOptionsDisabled}}
 - Optional focus: work directly in the current session and return the requested result without additional optional sections.
 {{/allOptionsDisabled}}
 
 {{#when purpose technicalDesign}}
+- Technical-design coherence: when multiple artifacts are included, keep component and participant names, boundaries, and granularity consistent. If a System architecture diagram is included, use its component names and boundaries as the shared vocabulary. Do not repeat the same information across diagrams; each artifact must add a viewpoint the others do not.
 - Design outcome: explain how the strongest direction fits the existing system, what it would take to build, and whether to proceed, narrow the scope, or stop.
 {{/when}}
 

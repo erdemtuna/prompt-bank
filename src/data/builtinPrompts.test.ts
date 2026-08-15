@@ -2,12 +2,53 @@ import { describe, expect, it } from 'vitest';
 import { composePrompt, initialOptionValues, initialVariableValues, type OptionValues, type VariableValues } from './composer';
 import { loadAppData } from './loaders';
 import type { Prompt } from './schemas';
+import { effectiveMatrixCardinality } from '../../scripts/lib/compositionMatrix';
 
 const appData = loadAppData();
 const modelValues = {
   model: 'GPT-5.6 Sol 128K context high reasoning',
   rubberDuckModel: 'GPT-5.6 Sol 128K context extra high reasoning'
 };
+const technicalScopes = ['infer', 'frontend', 'backend', 'fullStack'] as const;
+const technicalArtifacts = [
+  {
+    id: 'systemArchitecture',
+    label: 'System architecture',
+    marker: 'System architecture:',
+    scopes: technicalScopes
+  },
+  {
+    id: 'uiMockups',
+    label: 'UI mockups',
+    marker: 'UI mockups:',
+    scopes: ['frontend', 'fullStack']
+  },
+  {
+    id: 'stateDiagram',
+    label: 'State diagram',
+    marker: 'State diagram:',
+    scopes: technicalScopes
+  },
+  {
+    id: 'sequenceDiagram',
+    label: 'Sequence diagram',
+    marker: 'Sequence diagram:',
+    scopes: technicalScopes
+  },
+  {
+    id: 'activityWorkflowDiagram',
+    label: 'Activity/workflow diagram',
+    marker: 'Activity/workflow diagram:',
+    scopes: technicalScopes
+  },
+  {
+    id: 'apiDataFlowDiagram',
+    label: 'API/data-flow diagram',
+    marker: 'API/data-flow diagram:',
+    scopes: technicalScopes
+  }
+] as const;
+const coherenceMarker = 'Technical-design coherence:';
 
 function builtinPrompt(id: string): Prompt {
   const prompt = appData.prompts.find((candidate) => candidate.id === id);
@@ -28,6 +69,15 @@ function compose(
   );
 }
 
+function selectOptions(prompt: Prompt, ...enabledIds: string[]): OptionValues {
+  const enabled = new Set(enabledIds);
+  return Object.fromEntries(prompt.options.map((option) => [option.id, enabled.has(option.id)]));
+}
+
+function occurrenceCount(text: string, marker: string): number {
+  return text.split(marker).length - 1;
+}
+
 describe('Wave 2B built-in prompts', () => {
   it('keeps non-technical investigation purposes free of scope and artifact output', () => {
     const prompt = builtinPrompt('investigate-a-topic');
@@ -39,35 +89,89 @@ describe('Wave 2B built-in prompts', () => {
     });
     expect(prompt.variables.find((variable) => variable.name === 'technicalScope')?.visibleWhen)
       .toEqual({ purpose: ['technicalDesign'] });
+    expect(prompt.options.map((option) => [option.id, option.label])).toEqual([
+      ['parallelAgents', 'Parallel agents'],
+      ...technicalArtifacts.map((artifact) => [artifact.id, artifact.label])
+    ]);
 
     for (const purpose of ['general', 'brainstorm']) {
-      for (const technicalScope of ['infer', 'frontend', 'backend', 'fullStack']) {
+      for (const technicalScope of technicalScopes) {
         const result = compose(prompt, { purpose, technicalScope }, allOptionsEnabled);
 
         expect(result.canCopy).toBe(true);
-        expect(result.text).not.toMatch(/Design scope —|Design outcome:|UI mockups:|State diagram:|Sequence diagram:|Use-case or activity diagram:|API or data-flow diagram:/);
+        expect(result.text).not.toMatch(/Design scope —|Design outcome:|Technical-design coherence:|\barchitecture\b/i);
+        for (const artifact of technicalArtifacts) {
+          expect(result.text).not.toContain(artifact.marker);
+        }
       }
     }
   });
 
-  it('applies investigation artifacts only to available technical scopes', () => {
+  it('applies the locked technical artifact taxonomy only to available scopes', () => {
     const prompt = builtinPrompt('investigate-a-topic');
 
-    const frontend = compose(prompt, { purpose: 'technicalDesign', technicalScope: 'frontend' }, {
-      uiMockups: true,
-      apiDataFlowDiagram: true
-    });
-    const backend = compose(prompt, { purpose: 'technicalDesign', technicalScope: 'backend' }, {
-      uiMockups: true,
-      apiDataFlowDiagram: true
-    });
+    for (const technicalScope of technicalScopes) {
+      const result = compose(
+        prompt,
+        { purpose: 'technicalDesign', technicalScope },
+        selectOptions(prompt, ...technicalArtifacts.map((artifact) => artifact.id))
+      );
 
-    expect(frontend.text).toContain('Design scope — frontend:');
-    expect(frontend.text).toContain('UI mockups:');
-    expect(frontend.text).toContain('API or data-flow diagram:');
-    expect(backend.text).toContain('Design scope — backend:');
-    expect(backend.text).not.toContain('UI mockups:');
-    expect(backend.text).toContain('API or data-flow diagram:');
+      for (const artifact of technicalArtifacts) {
+        const expected = artifact.scopes.some((scope) => scope === technicalScope);
+        expect(result.applicability.options[artifact.id]).toEqual({
+          visible: true,
+          enabled: expected
+        });
+        expect(result.text.includes(artifact.marker)).toBe(expected);
+      }
+    }
+  });
+
+  it('emits one independent marker for each technical artifact', () => {
+    const prompt = builtinPrompt('investigate-a-topic');
+
+    for (const artifact of technicalArtifacts) {
+      const result = compose(
+        prompt,
+        { purpose: 'technicalDesign', technicalScope: artifact.scopes[0] },
+        selectOptions(prompt, artifact.id)
+      );
+
+      expect(occurrenceCount(result.text, artifact.marker)).toBe(1);
+      for (const other of technicalArtifacts.filter((candidate) => candidate.id !== artifact.id)) {
+        expect(result.text).not.toContain(other.marker);
+      }
+    }
+  });
+
+  it('separates static architecture, runtime sequence, process flow, and data movement', () => {
+    const prompt = builtinPrompt('investigate-a-topic');
+    const result = compose(
+      prompt,
+      { purpose: 'technicalDesign', technicalScope: 'fullStack' },
+      selectOptions(prompt, 'systemArchitecture', 'sequenceDiagram', 'activityWorkflowDiagram', 'apiDataFlowDiagram')
+    );
+
+    expect(result.text).toContain('static structural view of the major components, modules, or services');
+    expect(result.text).toContain('responsibilities, boundaries, and static dependencies');
+    expect(result.text).toContain('Do not use this view for runtime message order or data payload movement.');
+    expect(result.text).toContain('for a greenfield system, show only the proposed architecture and do not invent an existing baseline.');
+    expect(result.text).toContain('Sequence diagram: include a diagram showing participant ownership, runtime message order');
+    expect(result.text).toContain('Activity/workflow diagram: include a diagram showing actors, process steps, decisions, branches');
+    expect(result.text).toContain('Use it for process and decision flow, not runtime message order or timing.');
+    expect(result.text).toContain('API/data-flow diagram: include a diagram showing contracts, trust boundaries, transformations, storage, and movement of data.');
+    expect(occurrenceCount(result.text, coherenceMarker)).toBe(1);
+    expect(result.text).toContain('use its component names and boundaries as the shared vocabulary');
+    expect(result.text).toContain('each artifact must add a viewpoint the others do not');
+  });
+
+  it('keeps the effective investigation matrix below the unchanged safety limit', () => {
+    const prompt = builtinPrompt('investigate-a-topic');
+    const combinationCount = effectiveMatrixCardinality(prompt);
+
+    expect(combinationCount).toBe(1164);
+    expect(combinationCount).toBeLessThan(4096);
   });
 
   it('keeps implementation planning scope-aware without recreating technical design', () => {

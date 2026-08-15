@@ -3,6 +3,7 @@ import { isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { composeModelLabel, composePrompt, type OptionValues, type VariableValues } from '../src/data/composer';
 import { parseModelPresets, parsePromptFile, validatePromptCollection, type ParsedPrompt, type Prompt, type PromptIdentity, type ValidationIssue } from '../src/data/schemas';
+import { effectiveCompositionStates, effectiveMatrixCardinality } from './lib/compositionMatrix';
 
 const repoRoot = fileURLToPath(new URL('..', import.meta.url));
 const args = process.argv.slice(2);
@@ -10,7 +11,6 @@ const requestedPromptRoot = argumentValue(args, '--prompt-root');
 const promptRoot = requestedPromptRoot
   ? (isAbsolute(requestedPromptRoot) ? requestedPromptRoot : resolve(repoRoot, requestedPromptRoot))
   : join(repoRoot, 'prompts');
-const runMatrix = args.includes('--matrix');
 const modelPresetPath = join(repoRoot, 'model-presets.yaml');
 const packageVersion = JSON.parse(readFileSync(join(repoRoot, 'package.json'), 'utf8')) as { version: string };
 const issues: ValidationIssue[] = [];
@@ -31,8 +31,11 @@ for (const filePath of promptFiles) {
 
 issues.push(...validatePromptCollection(prompts, presetResult.presets, { promptFileCount: promptFiles.length, promptIdentities }));
 
-if (issues.length === 0 && runMatrix) {
-  issues.push(...validateCompositionMatrix(prompts, presetResult.presets));
+let effectiveCombinationCount = 0;
+if (issues.length === 0) {
+  const matrixResult = validateCompositionMatrix(prompts, presetResult.presets);
+  issues.push(...matrixResult.issues);
+  effectiveCombinationCount = matrixResult.combinationCount;
 }
 
 if (issues.length > 0) {
@@ -44,7 +47,7 @@ if (issues.length > 0) {
 
 console.log(
   `Validated ${prompts.length} prompt file(s) and ${presetResult.presets.length} model preset(s)`
-  + `${runMatrix ? ' across all control combinations' : ''} with Prompt Bank ${packageVersion.version}.`
+  + ` across ${effectiveCombinationCount} effective control combination(s) with Prompt Bank ${packageVersion.version}.`
 );
 
 function markdownFiles(root: string): string[] {
@@ -62,10 +65,14 @@ function markdownFiles(root: string): string[] {
   return files.sort();
 }
 
-function validateCompositionMatrix(prompts: ParsedPrompt[], presets: ReturnType<typeof parseModelPresets>['presets']): ValidationIssue[] {
+function validateCompositionMatrix(
+  prompts: ParsedPrompt[],
+  presets: ReturnType<typeof parseModelPresets>['presets']
+): { issues: ValidationIssue[]; combinationCount: number } {
   const matrixIssues: ValidationIssue[] = [];
   const preset = presets[0];
   const modelLabel = composeModelLabel(preset, preset?.defaultContextId ?? '', preset?.defaultReasoningId ?? '');
+  let combinationCount = 0;
 
   for (const parsedPrompt of prompts) {
     const prompt: Prompt = {
@@ -74,79 +81,44 @@ function validateCompositionMatrix(prompts: ParsedPrompt[], presets: ReturnType<
       sourceLabel: 'Folder',
       key: `matrix:${parsedPrompt.path}`
     };
-    const combinationCount = matrixCardinality(prompt);
-    if (combinationCount > 4096) {
+    const promptCombinationCount = effectiveMatrixCardinality(prompt);
+    combinationCount += promptCombinationCount;
+    if (promptCombinationCount > 4096) {
       matrixIssues.push({
         scope: 'prompt',
         path: prompt.path,
-        message: `Composition matrix has ${combinationCount} combinations, exceeding the 4096 safety limit.`
+        message: `Effective composition matrix has ${promptCombinationCount} combinations, exceeding the 4096 safety limit.`
       });
       continue;
     }
-    const variableStates = variableCombinations(prompt);
-    const optionStates = optionCombinations(prompt);
 
-    for (const values of variableStates) {
-      for (const optionValues of optionStates) {
-        const result = composePrompt(
-          prompt,
-          values,
-          { model: modelLabel, rubberDuckModel: modelLabel },
-          { optionValues }
-        );
-        const state = stateLabel(values, optionValues);
-        if (!result.canCopy) {
-          matrixIssues.push({
-            scope: 'prompt',
-            path: prompt.path,
-            message: `Composition failed for ${state}: ${result.disabledReasons.join(' ')}`
-          });
-          continue;
-        }
-        if (/\{\{\s*[#/](?:option|allOptionsDisabled|when)\b/.test(result.text)) {
-          matrixIssues.push({
-            scope: 'prompt',
-            path: prompt.path,
-            message: `Composition left an unresolved control tag for ${state}.`
-          });
-        }
+    for (const { values, optionValues } of effectiveCompositionStates(prompt)) {
+      const result = composePrompt(
+        prompt,
+        values,
+        { model: modelLabel, rubberDuckModel: modelLabel },
+        { optionValues }
+      );
+      const state = stateLabel(values, optionValues);
+      if (!result.canCopy) {
+        matrixIssues.push({
+          scope: 'prompt',
+          path: prompt.path,
+          message: `Composition failed for ${state}: ${result.disabledReasons.join(' ')}`
+        });
+        continue;
+      }
+      if (/\{\{\s*[#/](?:option|allOptionsDisabled|when)\b/.test(result.text)) {
+        matrixIssues.push({
+          scope: 'prompt',
+          path: prompt.path,
+          message: `Composition left an unresolved control tag for ${state}.`
+        });
       }
     }
   }
 
-  return matrixIssues;
-}
-
-function matrixCardinality(prompt: ParsedPrompt): number {
-  const variableCount = prompt.variables.reduce((count, variable) => {
-    const values = variable.control === 'select' || variable.control === 'slider'
-      ? variable.choices?.length ?? 0
-      : 1;
-    return count * values;
-  }, 1);
-  return variableCount * (2 ** prompt.options.length);
-}
-
-function variableCombinations(prompt: ParsedPrompt): VariableValues[] {
-  let states: VariableValues[] = [{}];
-  for (const variable of prompt.variables) {
-    const values = variable.control === 'select' || variable.control === 'slider'
-      ? (variable.choices ?? []).map((choice) => choice.id)
-      : [variable.defaultValue ?? `test-${variable.name}`];
-    states = states.flatMap((state) => values.map((value) => ({ ...state, [variable.name]: value })));
-  }
-  return states;
-}
-
-function optionCombinations(prompt: ParsedPrompt): OptionValues[] {
-  let states: OptionValues[] = [{}];
-  for (const option of prompt.options) {
-    states = states.flatMap((state) => [
-      { ...state, [option.id]: false },
-      { ...state, [option.id]: true }
-    ]);
-  }
-  return states;
+  return { issues: matrixIssues, combinationCount };
 }
 
 function stateLabel(values: VariableValues, optionValues: OptionValues): string {
