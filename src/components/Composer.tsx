@@ -389,14 +389,14 @@ const useStyles = makeStyles({
   },
   modelGrid: {
     display: 'grid',
-    gridTemplateColumns: 'minmax(0, 1.2fr) repeat(2, minmax(0, 1fr))',
+    gridTemplateColumns: 'minmax(178px, 1.6fr) repeat(2, minmax(73px, 1fr))',
     gridTemplateRows: 'auto auto',
-    gap: '6px 8px',
+    gap: '6px',
     '@media (max-width: 640px)': {
       gridTemplateColumns: '1fr',
       gridTemplateRows: 'none'
     },
-    '@container (max-width: 303px)': {
+    '@container (max-width: 335px)': {
       gridTemplateColumns: '1fr',
       gridTemplateRows: 'none'
     }
@@ -410,12 +410,9 @@ const useStyles = makeStyles({
     '@media (max-width: 640px)': {
       gridRow: 'auto / span 2'
     },
-    '@container (max-width: 303px)': {
+    '@container (max-width: 335px)': {
       gridRow: 'auto / span 2'
     }
-  },
-  modelFieldLabel: {
-    alignSelf: 'start'
   },
   variantLabel: {
     alignSelf: 'start',
@@ -438,6 +435,23 @@ const useStyles = makeStyles({
     minWidth: 0,
     width: 'fit-content',
     maxWidth: '100%'
+  },
+  modelFieldLabel: {
+    alignSelf: 'start',
+    alignItems: 'flex-start',
+    gap: '4px',
+    '& > [data-help-trigger]': {
+      marginTop: '1px'
+    }
+  },
+  modelRoleLabel: {
+    alignSelf: 'start',
+    fontFamily: 'var(--sw-mono)',
+    fontSize: '10px',
+    fontWeight: 500,
+    letterSpacing: '0.02em',
+    textTransform: 'uppercase',
+    color: 'var(--sw-muted)'
   },
   titleHelpLabel: {
     alignItems: 'baseline'
@@ -483,6 +497,13 @@ const useStyles = makeStyles({
       fontSize: '14px',
       color: 'var(--sw-ink)'
     }
+  },
+  modelSelectElement: {
+    paddingLeft: '1px',
+    paddingRight: '20px'
+  },
+  modelSelectIcon: {
+    right: 0
   },
   textareaField: {
     width: '100%',
@@ -548,6 +569,7 @@ const useStyles = makeStyles({
     justifyContent: 'center',
     width: '17px',
     height: '17px',
+    flexShrink: 0,
     border: 'none',
     background: 'none',
     padding: 0,
@@ -660,11 +682,13 @@ function ModelGroup({
             helpText={roleDescription}
             triggerLabel={`About ${roleLabel}`}
           >
-            <span id={roleLabelId} className={styles.variantLabel}>{roleLabel}</span>
+            <span id={roleLabelId} className={styles.modelRoleLabel}>{roleLabel}</span>
           </HelpLabel>
           <Select
             appearance="underline"
             className={styles.underlineField}
+            select={{ className: styles.modelSelectElement }}
+            icon={{ className: styles.modelSelectIcon }}
             aria-labelledby={roleLabelId}
             value={presetId}
             disabled={presets.length === 0}
@@ -682,6 +706,8 @@ function ModelGroup({
             <Select
               appearance="underline"
               className={styles.underlineField}
+              select={{ className: styles.modelSelectElement }}
+              icon={{ className: styles.modelSelectIcon }}
               aria-label={`${roleLabel} context`}
               value={contextId}
               onChange={(_, data) => onContextChange(data.value)}
@@ -698,6 +724,8 @@ function ModelGroup({
             <Select
               appearance="underline"
               className={styles.underlineField}
+              select={{ className: styles.modelSelectElement }}
+              icon={{ className: styles.modelSelectIcon }}
               aria-label={`${roleLabel} reasoning`}
               value={reasoningId}
               onChange={(_, data) => onReasoningChange(data.value)}

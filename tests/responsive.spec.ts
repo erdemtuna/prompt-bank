@@ -183,41 +183,98 @@ test('workflow selects use two columns when the desktop rail has room', async ({
   expect(new Set(boxes.map((left) => Math.round(left))).size).toBe(2);
 });
 
-test('wrapped model labels and selects share row geometry', async ({ page }) => {
+test('common model role labels stay on one line without starving aligned variant selects', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto(composerFixture);
+  await page.evaluate(() => (document as unknown as { fonts: { ready: Promise<unknown> } }).fonts.ready);
   const rail = page.locator('aside[aria-label="Prompt inputs"]');
-  await rail.locator('..').evaluate((workspace) => {
-    workspace.style.gridTemplateColumns = 'minmax(0, 1fr) 320px';
-  });
+  for (const railWidth of [340, 360, 380]) {
+    await rail.locator('..').evaluate((workspace, width) => {
+      workspace.style.gridTemplateColumns = `minmax(0, 1fr) ${width}px`;
+    }, railWidth);
+
+    for (const roleLabel of ['Approved execution model', 'Planning and review model']) {
+      const card = page.getByRole('group', { name: roleLabel, exact: true });
+      await expect(card.locator('strong')).toHaveCount(0);
+      const desktopGeometry = await card.locator('[data-model-field]').evaluateAll((fields) =>
+        fields.map((field) => {
+          const label = field.firstElementChild;
+          const control = field.querySelector('.fui-Select');
+          if (!label || !control) throw new Error('Model field label or Select wrapper was not found');
+          const fieldBox = field.getBoundingClientRect();
+          const labelBox = label.getBoundingClientRect();
+          const controlBox = control.getBoundingClientRect();
+          const select = control.querySelector('select');
+          if (!select) throw new Error('Model Select element was not found');
+          const selectStyle = getComputedStyle(select);
+          const canvas = document.createElement('canvas').getContext('2d');
+          if (!canvas) throw new Error('Canvas context was not available');
+          canvas.font = `${selectStyle.fontWeight} ${selectStyle.fontSize} ${selectStyle.fontFamily}`;
+          return {
+            fieldLeft: fieldBox.left,
+            fieldWidth: fieldBox.width,
+            labelText: label.textContent?.trim(),
+            labelTop: labelBox.top,
+            labelHeight: labelBox.height,
+            controlTop: controlBox.top,
+            controlBottom: controlBox.bottom,
+            controlWidth: controlBox.width,
+            selectedTextWidth: canvas.measureText(select.selectedOptions[0]?.text ?? '').width,
+            selectedTextSpace: select.clientWidth
+              - Number.parseFloat(selectStyle.paddingLeft)
+              - Number.parseFloat(selectStyle.paddingRight)
+          };
+        })
+      );
+      expect(desktopGeometry).toHaveLength(3);
+      expect(desktopGeometry[0].labelText).toBe(roleLabel);
+      expect(desktopGeometry[0].labelHeight).toBeLessThanOrEqual(20.5);
+      expect(new Set(desktopGeometry.map(({ fieldLeft }) => Math.round(fieldLeft))).size).toBe(3);
+      expect(desktopGeometry[1].fieldWidth).toBeGreaterThanOrEqual(72.5);
+      expect(desktopGeometry[2].fieldWidth).toBeGreaterThanOrEqual(72.5);
+      expect(Math.abs(desktopGeometry[1].fieldWidth - desktopGeometry[2].fieldWidth)).toBeLessThanOrEqual(0.5);
+      expect(Math.max(...desktopGeometry.map(({ labelTop }) => labelTop)) - Math.min(...desktopGeometry.map(({ labelTop }) => labelTop))).toBeLessThanOrEqual(1);
+      expect(Math.max(...desktopGeometry.map(({ controlTop }) => controlTop)) - Math.min(...desktopGeometry.map(({ controlTop }) => controlTop))).toBeLessThanOrEqual(1);
+      expect(Math.max(...desktopGeometry.map(({ controlBottom }) => controlBottom)) - Math.min(...desktopGeometry.map(({ controlBottom }) => controlBottom))).toBeLessThanOrEqual(1);
+      expect(Math.max(...desktopGeometry.map(({ fieldWidth, controlWidth }) => Math.abs(fieldWidth - controlWidth)))).toBeLessThanOrEqual(0.5);
+      expect(Math.min(...desktopGeometry.map(({ selectedTextSpace, selectedTextWidth }) => selectedTextSpace - selectedTextWidth))).toBeGreaterThanOrEqual(0);
+    }
+  }
+});
+
+test('wrapped model role help stays beside the first label line', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(composerFixture);
 
   const card = page.getByRole('group', { name: 'Approved execution model', exact: true });
-  await expect(card.locator('strong')).toHaveCount(0);
-  const desktopGeometry = await card.locator('[data-model-field]').evaluateAll((fields) =>
-    fields.map((field) => {
-      const label = field.firstElementChild;
-      const control = field.querySelector('.fui-Select');
-      if (!label || !control) throw new Error('Model field label or Select wrapper was not found');
-      const fieldBox = field.getBoundingClientRect();
-      const labelBox = label.getBoundingClientRect();
-      const controlBox = control.getBoundingClientRect();
-      return {
-        fieldLeft: fieldBox.left,
-        labelText: label.textContent?.trim(),
-        labelTop: labelBox.top,
-        labelHeight: labelBox.height,
-        controlTop: controlBox.top,
-        controlBottom: controlBox.bottom
-      };
-    })
-  );
-  expect(desktopGeometry).toHaveLength(3);
-  expect(desktopGeometry[0].labelText).toBe('Approved execution model');
-  expect(desktopGeometry[0].labelHeight).toBeGreaterThan(desktopGeometry[1].labelHeight + 1);
-  expect(new Set(desktopGeometry.map(({ fieldLeft }) => Math.round(fieldLeft))).size).toBe(3);
-  expect(Math.max(...desktopGeometry.map(({ labelTop }) => labelTop)) - Math.min(...desktopGeometry.map(({ labelTop }) => labelTop))).toBeLessThanOrEqual(1);
-  expect(Math.max(...desktopGeometry.map(({ controlTop }) => controlTop)) - Math.min(...desktopGeometry.map(({ controlTop }) => controlTop))).toBeLessThanOrEqual(1);
-  expect(Math.max(...desktopGeometry.map(({ controlBottom }) => controlBottom)) - Math.min(...desktopGeometry.map(({ controlBottom }) => controlBottom))).toBeLessThanOrEqual(1);
+  await card.locator('.fui-Select').first().evaluate((select) => {
+    const grid = select.closest('[data-model-card]')?.querySelector('[data-model-field]')?.parentElement;
+    if (!grid) throw new Error('Model grid was not found');
+    grid.style.gridTemplateColumns = '120px 100px 100px';
+  });
+
+  const geometry = await card.locator('[data-model-field="model"]').evaluate((field) => {
+    const labelWrap = field.firstElementChild;
+    const label = labelWrap?.firstElementChild;
+    const trigger = labelWrap?.querySelector<HTMLElement>('[data-help-trigger]');
+    if (!labelWrap || !label || !trigger) throw new Error('Model role label help was not found');
+    const wrapBox = labelWrap.getBoundingClientRect();
+    const labelBox = label.getBoundingClientRect();
+    const triggerBox = trigger.getBoundingClientRect();
+    return {
+      wrapHeight: wrapBox.height,
+      labelTop: labelBox.top,
+      labelRight: labelBox.right,
+      triggerTop: triggerBox.top,
+      triggerLeft: triggerBox.left
+    };
+  });
+
+  expect(geometry.wrapHeight).toBeGreaterThan(20.5);
+  expect(geometry.triggerTop - geometry.labelTop).toBeGreaterThanOrEqual(0);
+  expect(geometry.triggerTop - geometry.labelTop).toBeLessThanOrEqual(2);
+  expect(geometry.triggerLeft - geometry.labelRight).toBeGreaterThanOrEqual(3.5);
+  expect(geometry.triggerLeft - geometry.labelRight).toBeLessThanOrEqual(4.5);
 });
 
 test('model, context, and reasoning stack in order at narrow viewport width', async ({ page }) => {
