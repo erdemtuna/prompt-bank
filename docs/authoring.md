@@ -193,7 +193,7 @@ A conditional block tag that sits on its own line is treated as a control line a
 
 Two built in placeholders insert a descriptive model label chosen in the interface. Use `{{model}}` for the general model and `{{rubberDuckModel}}` for an alternative or reviewer model. Do not declare variables named `model` or `rubberDuckModel`. Set `model_default` to a preset id from `model-presets.yaml` to preselect one.
 
-When a preset declares `contexts` or `reasoning`, the interface shows context and reasoning dropdowns beside that model and folds the choices into the same placeholder, so a prompt written as `{{model}}` can copy as `GPT-5.6 Terra 1M context medium reasoning` without any change to the template. The declared choice order, defaults, and preset YAML format are unchanged. See `schema.md` for the preset format.
+When a preset declares `contexts`, the interface shows a Context dropdown beside that model; when it declares `reasoning`, the interface shows a Reasoning dropdown. The interface folds the declared choices into the same placeholder, so a prompt written as `{{model}}` can copy as `GPT-5.6 Terra 1M context medium reasoning` without any change to the template. The declared choice order, defaults, and preset YAML format are unchanged. See `schema.md` for the preset format.
 
 Use `model_roles` to explain what each active placeholder means for this prompt:
 
@@ -228,7 +228,7 @@ The composer groups visible controls in this order:
 
 1. **Workflow** — selects and discrete sliders declared by prompt variables.
 2. **Focus areas** — additive options, including visible disabled options with an availability explanation.
-3. **Model guidance** — active model roles, with the role as the first model-field label and context and reasoning dropdowns alongside it.
+3. **Model guidance** — active model roles, with the role as the first model-field label, plus a Context dropdown for a declared `contexts` list and a Reasoning dropdown for a declared `reasoning` list.
 4. **Context** — text and textarea inputs.
 5. **Raw template**.
 

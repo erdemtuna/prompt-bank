@@ -322,7 +322,7 @@ model_roles:
 
 Only `model` and `rubberDuckModel` are supported. Each role requires both fields. Metadata is shown only when the corresponding placeholder is active. It does not change interpolation, execute a prompt, select a provider, or route work.
 
-A preset may declare `contexts` and `reasoning`, each a list of variants with a kebab-case `id` and a `label`. The composer shows both context and reasoning as dropdowns, preserving each list's declared order. The copied text becomes the model label, context label, and reasoning label joined by spaces. Use `default_context` and `default_reasoning` to preselect a variant; without them the first entry wins. This presentation does not change the preset format or the discrete sliders declared by generic prompt variables with `control: slider`.
+A preset may declare `contexts` and `reasoning`, each a list of variants with a kebab-case `id` and a `label`. The composer shows a Context dropdown for a declared `contexts` list and a Reasoning dropdown for a declared `reasoning` list, preserving each list's declared order. The copied text becomes the model label followed by the selected labels from any declared lists, joined by spaces. Use `default_context` and `default_reasoning` to preselect a variant; without them the first entry wins. This presentation does not change the preset format or the discrete sliders declared by generic prompt variables with `control: slider`.
 
 ```yaml
 presets:
@@ -365,4 +365,4 @@ The composer presents active authoring controls in this order:
 4. **Context** — visible text and textarea variables.
 5. **Raw template**.
 
-Model, context, and reasoning choices belong to one model-guidance group; context and reasoning use dropdowns. This hierarchy is presentation for composing copied text. Prompt Bank remains copy-only and does not run the described workflow.
+Model choices belong to the model-guidance group. A declared `contexts` list adds a Context dropdown to that group, and a declared `reasoning` list adds a Reasoning dropdown. This hierarchy is presentation for composing copied text. Prompt Bank remains copy-only and does not run the described workflow.
