@@ -1,6 +1,6 @@
 {
   "name": "prompt-bank",
-  "version": "0.5.3",
+  "version": "0.5.4",
   "private": true,
   "type": "module",
   "description": "Reusable prompts as local Markdown, composed in a small React interface and ready to paste.",
