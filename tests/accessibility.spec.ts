@@ -42,6 +42,19 @@ test('select and slider prompt controls have no serious or critical violations',
   expect(summary, JSON.stringify(summary, null, 2)).toEqual([]);
 });
 
+test('default model role groups and selects have exact scoped accessible names', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.getByRole('button', { name: /^Review a Pull Request(?:, selected)?$/ })).toBeVisible();
+
+  for (const roleLabel of ['General model', 'Alternative model']) {
+    const group = page.getByRole('group', { name: roleLabel, exact: true });
+    await expect(group).toBeVisible();
+    await expect(group.getByRole('combobox', { name: roleLabel, exact: true })).toBeVisible();
+    await expect(group.getByRole('combobox', { name: `${roleLabel} context`, exact: true })).toBeVisible();
+    await expect(group.getByRole('combobox', { name: `${roleLabel} reasoning`, exact: true })).toBeVisible();
+  }
+});
+
 test('the copy action is reachable and activatable by keyboard', async ({ page }) => {
   await page.goto('/');
   await page.getByRole('button', { name: 'Rewrite for Clarity', exact: true }).click();
@@ -136,11 +149,17 @@ test('Composer sections and model role groups expose programmatic names and desc
   await expect(executionGroup).toBeVisible();
   await expect(executionGroup).toHaveAccessibleDescription('Used by approved implementation workers.');
   await expect(executionGroup.getByText('Used by approved implementation workers.')).toHaveCSS('clip', 'rect(0px, 0px, 0px, 0px)');
+  await expect(executionGroup.getByRole('combobox', { name: 'Approved execution model', exact: true })).toBeVisible();
+  await expect(executionGroup.getByRole('combobox', { name: 'Approved execution model context', exact: true })).toBeVisible();
+  await expect(executionGroup.getByRole('combobox', { name: 'Approved execution model reasoning', exact: true })).toBeVisible();
 
   const reviewGroup = page.getByRole('group', { name: 'Planning and review model', exact: true });
   await expect(reviewGroup).toBeVisible();
   await expect(reviewGroup).toHaveAccessibleDescription('Used by reviewers that critique execution waves.');
   await expect(reviewGroup.getByText('Used by reviewers that critique execution waves.')).toHaveCSS('clip', 'rect(0px, 0px, 0px, 0px)');
+  await expect(reviewGroup.getByRole('combobox', { name: 'Planning and review model', exact: true })).toBeVisible();
+  await expect(reviewGroup.getByRole('combobox', { name: 'Planning and review model context', exact: true })).toBeVisible();
+  await expect(reviewGroup.getByRole('combobox', { name: 'Planning and review model reasoning', exact: true })).toBeVisible();
 
   const roleHelp = page.getByRole('button', { name: 'About Approved execution model' });
   await roleHelp.focus();

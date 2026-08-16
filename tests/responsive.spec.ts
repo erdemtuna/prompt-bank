@@ -183,21 +183,47 @@ test('workflow selects use two columns when the desktop rail has room', async ({
   expect(new Set(boxes.map((left) => Math.round(left))).size).toBe(2);
 });
 
-test('model, context, and reasoning share one responsive row', async ({ page }) => {
+test('wrapped model labels and selects share row geometry', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto(composerFixture);
-  const card = page.locator('[data-model-card]').filter({ hasText: 'Approved execution model' });
-  const desktopBoxes = await card.locator('[data-model-field]').evaluateAll((fields) =>
+  const rail = page.locator('aside[aria-label="Prompt inputs"]');
+  await rail.locator('..').evaluate((workspace) => {
+    workspace.style.gridTemplateColumns = 'minmax(0, 1fr) 320px';
+  });
+
+  const card = page.getByRole('group', { name: 'Approved execution model', exact: true });
+  await expect(card.locator('strong')).toHaveCount(0);
+  const desktopGeometry = await card.locator('[data-model-field]').evaluateAll((fields) =>
     fields.map((field) => {
-      const box = field.getBoundingClientRect();
-      return { left: box.left, top: box.top, bottom: box.bottom };
+      const label = field.firstElementChild;
+      const control = field.querySelector('.fui-Select');
+      if (!label || !control) throw new Error('Model field label or Select wrapper was not found');
+      const fieldBox = field.getBoundingClientRect();
+      const labelBox = label.getBoundingClientRect();
+      const controlBox = control.getBoundingClientRect();
+      return {
+        fieldLeft: fieldBox.left,
+        labelText: label.textContent?.trim(),
+        labelTop: labelBox.top,
+        labelHeight: labelBox.height,
+        controlTop: controlBox.top,
+        controlBottom: controlBox.bottom
+      };
     })
   );
-  expect(desktopBoxes).toHaveLength(3);
-  expect(new Set(desktopBoxes.map((box) => Math.round(box.left))).size).toBe(3);
-  expect(Math.max(...desktopBoxes.map((box) => box.bottom)) - Math.min(...desktopBoxes.map((box) => box.bottom))).toBeLessThanOrEqual(1);
+  expect(desktopGeometry).toHaveLength(3);
+  expect(desktopGeometry[0].labelText).toBe('Approved execution model');
+  expect(desktopGeometry[0].labelHeight).toBeGreaterThan(desktopGeometry[1].labelHeight + 1);
+  expect(new Set(desktopGeometry.map(({ fieldLeft }) => Math.round(fieldLeft))).size).toBe(3);
+  expect(Math.max(...desktopGeometry.map(({ labelTop }) => labelTop)) - Math.min(...desktopGeometry.map(({ labelTop }) => labelTop))).toBeLessThanOrEqual(1);
+  expect(Math.max(...desktopGeometry.map(({ controlTop }) => controlTop)) - Math.min(...desktopGeometry.map(({ controlTop }) => controlTop))).toBeLessThanOrEqual(1);
+  expect(Math.max(...desktopGeometry.map(({ controlBottom }) => controlBottom)) - Math.min(...desktopGeometry.map(({ controlBottom }) => controlBottom))).toBeLessThanOrEqual(1);
+});
 
+test('model, context, and reasoning stack in order at narrow viewport width', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 900 });
+  await page.goto(composerFixture);
+  const card = page.getByRole('group', { name: 'Approved execution model', exact: true });
   const narrowBoxes = await card.locator('[data-model-field]').evaluateAll((fields) =>
     fields.map((field) => {
       const box = field.getBoundingClientRect();
@@ -218,7 +244,7 @@ test('model grid stacks when its rail container is constrained to 280px', async 
     workspace.style.gridTemplateColumns = 'minmax(0, 1fr) 280px';
   });
 
-  const card = page.locator('[data-model-card]').filter({ hasText: 'Approved execution model' });
+  const card = page.getByRole('group', { name: 'Approved execution model', exact: true });
   const geometry = await card.locator('[data-model-field]').evaluateAll((fields) =>
     fields.map((field) => {
       const box = field.getBoundingClientRect();

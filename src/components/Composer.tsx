@@ -385,39 +385,40 @@ const useStyles = makeStyles({
   },
   modelCard: {
     display: 'grid',
-    gap: '12px',
     minWidth: 0
-  },
-  modelHeader: {
-    minWidth: 0
-  },
-  modelRole: {
-    fontFamily: 'var(--sw-sans)',
-    fontSize: '14px',
-    fontWeight: 700,
-    lineHeight: 1.3,
-    color: 'var(--sw-ink)'
   },
   modelGrid: {
     display: 'grid',
-    gridTemplateColumns: 'minmax(112px, 1.2fr) minmax(72px, 0.75fr) minmax(104px, 1fr)',
-    gap: '8px',
-    alignItems: 'end',
+    gridTemplateColumns: 'minmax(0, 1.2fr) repeat(2, minmax(0, 1fr))',
+    gridTemplateRows: 'auto auto',
+    gap: '6px 8px',
     '@media (max-width: 640px)': {
       gridTemplateColumns: '1fr',
-      alignItems: 'stretch'
+      gridTemplateRows: 'none'
     },
     '@container (max-width: 303px)': {
       gridTemplateColumns: '1fr',
-      alignItems: 'stretch'
+      gridTemplateRows: 'none'
     }
   },
   variantField: {
     display: 'grid',
-    gap: '6px',
-    minWidth: 0
+    gridRow: '1 / span 2',
+    gridTemplateRows: 'subgrid',
+    rowGap: '6px',
+    minWidth: 0,
+    '@media (max-width: 640px)': {
+      gridRow: 'auto / span 2'
+    },
+    '@container (max-width: 303px)': {
+      gridRow: 'auto / span 2'
+    }
+  },
+  modelFieldLabel: {
+    alignSelf: 'start'
   },
   variantLabel: {
+    alignSelf: 'start',
     fontFamily: 'var(--sw-mono)',
     fontSize: '10px',
     fontWeight: 500,
@@ -610,7 +611,6 @@ function variantSelection(variants: ModelPresetVariant[] | undefined, defaultId:
 
 type ModelGroupProps = {
   styles: ComposerStyles;
-  slotName: 'General' | 'Alternative';
   roleLabel: string;
   roleDescription: string;
   presets: ModelPreset[];
@@ -626,7 +626,6 @@ type ModelGroupProps = {
 
 function ModelGroup({
   styles,
-  slotName,
   roleLabel,
   roleDescription,
   presets,
@@ -652,23 +651,21 @@ function ModelGroup({
       aria-labelledby={roleLabelId}
       aria-describedby={roleDescription ? roleDescriptionId : undefined}
     >
-      <div className={styles.modelHeader}>
-        <HelpLabel
-          styles={styles}
-          helpText={roleDescription}
-          triggerLabel={`About ${roleLabel}`}
-        >
-          <strong id={roleLabelId} className={styles.modelRole}>{roleLabel}</strong>
-        </HelpLabel>
-        <span id={roleDescriptionId} className={styles.visuallyHidden}>{roleDescription}</span>
-      </div>
+      {roleDescription ? <span id={roleDescriptionId} className={styles.visuallyHidden}>{roleDescription}</span> : null}
       <div className={styles.modelGrid}>
         <div className={styles.variantField} data-model-field="model">
-          <span className={styles.variantLabel}>Model</span>
+          <HelpLabel
+            styles={styles}
+            className={styles.modelFieldLabel}
+            helpText={roleDescription}
+            triggerLabel={`About ${roleLabel}`}
+          >
+            <span id={roleLabelId} className={styles.variantLabel}>{roleLabel}</span>
+          </HelpLabel>
           <Select
             appearance="underline"
             className={styles.underlineField}
-            aria-label={`${slotName} model`}
+            aria-labelledby={roleLabelId}
             value={presetId}
             disabled={presets.length === 0}
             onChange={(_, data) => onPresetChange(data.value)}
@@ -685,7 +682,7 @@ function ModelGroup({
             <Select
               appearance="underline"
               className={styles.underlineField}
-              aria-label={`${slotName} context`}
+              aria-label={`${roleLabel} context`}
               value={contextId}
               onChange={(_, data) => onContextChange(data.value)}
             >
@@ -698,16 +695,17 @@ function ModelGroup({
         {reasoning.length > 0 ? (
           <div className={styles.variantField} data-model-field="reasoning">
             <span className={styles.variantLabel}>Reasoning</span>
-            <DiscreteSlider
-              label={`${slotName} reasoning`}
+            <Select
+              appearance="underline"
+              className={styles.underlineField}
+              aria-label={`${roleLabel} reasoning`}
               value={reasoningId}
-              choices={reasoning.map((variant) => ({
-                id: variant.id,
-                label: variantOptionText(variant, 'reasoning')
-              }))}
-              styles={styles}
-              onChange={onReasoningChange}
-            />
+              onChange={(_, data) => onReasoningChange(data.value)}
+            >
+              {reasoning.map((variant) => (
+                <option key={variant.id} value={variant.id}>{variantOptionText(variant, 'reasoning')}</option>
+              ))}
+            </Select>
           </div>
         ) : null}
       </div>
@@ -1027,7 +1025,6 @@ export function Composer({ prompt, presets, issues }: Props) {
                 {usesModel ? (
                   <ModelGroup
                     styles={styles}
-                    slotName="General"
                     roleLabel={prompt.modelRoles?.model?.label ?? 'General model'}
                     roleDescription={prompt.modelRoles?.model?.description ?? 'Used by the primary model placeholder in this prompt.'}
                     presets={presets}
@@ -1044,7 +1041,6 @@ export function Composer({ prompt, presets, issues }: Props) {
                 {usesRubberDuck ? (
                   <ModelGroup
                     styles={styles}
-                    slotName="Alternative"
                     roleLabel={prompt.modelRoles?.rubberDuckModel?.label ?? 'Alternative model'}
                     roleDescription={prompt.modelRoles?.rubberDuckModel?.description ?? 'Used by the alternative model placeholder in this prompt.'}
                     presets={presets}
