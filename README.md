@@ -130,7 +130,7 @@ Write a short note about {{topic}}.
 
 The example prompts under `prompts/` are the built in set and a starting point. See the authoring guide in `docs/authoring.md` and the full contract in `schema.md`. Run `npm run validate` to check the built in set.
 
-Selects and sliders appear first as Workflow, followed by Focus areas, active Model guidance, free-form Context, and the raw template. Authors can use `visible_when` to remove irrelevant controls, `enabled_when` to keep an unavailable option visible, compound `{{#when}}` conditions for coordinated choices, and `model_roles` to explain who a model label is intended for. Hidden paths are inactive during composition, and unavailable options are effectively off.
+Generic prompt selects and discrete sliders appear first as Workflow, followed by Focus areas, active Model guidance, free-form Context, and the raw template. In Model guidance, each role is the first model-field label rather than a separate card heading, while model context and reasoning are dropdowns. Authors can use `visible_when` to remove irrelevant controls, `enabled_when` to keep an unavailable option visible, compound `{{#when}}` conditions for coordinated choices, and `model_roles` to explain who a model label is intended for. Hidden paths are inactive during composition, and unavailable options are effectively off.
 
 These fields only shape the text that is previewed and copied. Model roles and workflow wording are descriptive metadata, not execution or model-routing configuration.
 

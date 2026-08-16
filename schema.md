@@ -84,7 +84,7 @@ Continue without optional artifacts.
 - Variables may include `default` or `defaultValue`. Defaults prefill the composer and are copied into the rendered prompt unless the user edits them.
 - Use defaults for stable, repeated operator values such as `current repository`, `main`, `current branch`, or standard validation guidance. Do not default values that should force a real decision, such as issue content, PR comments, approval summaries, or the main investigation intent.
 - Variables may set `control` to `text`, `textarea`, `select`, or `slider`. Omitting `control` preserves the existing automatic text-versus-textarea choice.
-- `select` is for one mutually exclusive value. `slider` is for one value from an ordered scale. Both require at least two `choices` and a `default` that matches one choice id.
+- For generic prompt variables, `select` is one mutually exclusive value and `slider` is a discrete slider for one value from an ordered scale. Both require at least two `choices` and a `default` that matches one choice id.
 - Each choice requires an `id` and may include `label` and `value`. The id controls conditions. Direct `{{variableName}}` interpolation copies `value` when present, otherwise `label`; it never copies the internal id accidentally.
 - Choice ids use variable-name syntax: start with a letter or underscore, then contain only letters, numbers, and underscores.
 - Use `{{#when variableName choiceId}}...{{/when}}` for text that belongs to one selected value.
@@ -308,7 +308,7 @@ Use `gpt-5-6-sol` by default. Choose a different preset only when the prompt cle
 
 Model presets live in `model-presets.yaml` and are descriptive copy guidance only. They label the copied prompt text for the user; they are not routing, provider, or execution configuration.
 
-Prompts may replace generic model-card headings with role-specific authoring metadata:
+Prompts may give each active model group a role-specific first-field label and description through authoring metadata:
 
 ```yaml
 model_roles:
@@ -322,7 +322,7 @@ model_roles:
 
 Only `model` and `rubberDuckModel` are supported. Each role requires both fields. Metadata is shown only when the corresponding placeholder is active. It does not change interpolation, execute a prompt, select a provider, or route work.
 
-A preset may declare `contexts` and `reasoning`, each a list of variants with a kebab-case `id` and a `label`. The composer shows context as a dropdown and ordered reasoning variants as a slider. The copied text becomes the model label, context label, and reasoning label joined by spaces. Use `default_context` and `default_reasoning` to preselect a variant; without them the first entry wins.
+A preset may declare `contexts` and `reasoning`, each a list of variants with a kebab-case `id` and a `label`. The composer shows both context and reasoning as dropdowns, preserving each list's declared order. The copied text becomes the model label, context label, and reasoning label joined by spaces. Use `default_context` and `default_reasoning` to preselect a variant; without them the first entry wins. This presentation does not change the preset format or the discrete sliders declared by generic prompt variables with `control: slider`.
 
 ```yaml
 presets:
@@ -359,10 +359,10 @@ Do not add provider routing, API configuration, temperature, or execution metada
 
 The composer presents active authoring controls in this order:
 
-1. **Workflow** — visible select and slider variables.
+1. **Workflow** — visible select and discrete slider variables.
 2. **Focus areas** — visible options; options that fail `enabled_when` remain visible and disabled with an availability explanation.
-3. **Model guidance** — active `model` and `rubberDuckModel` cards using prompt-specific roles when declared.
+3. **Model guidance** — active `model` and `rubberDuckModel` groups whose first model-field labels use prompt-specific roles when declared.
 4. **Context** — visible text and textarea variables.
 5. **Raw template**.
 
-Model, context, and reasoning choices belong to one model-guidance card. This hierarchy is presentation for composing copied text. Prompt Bank remains copy-only and does not run the described workflow.
+Model, context, and reasoning choices belong to one model-guidance group; context and reasoning use dropdowns. This hierarchy is presentation for composing copied text. Prompt Bank remains copy-only and does not run the described workflow.
