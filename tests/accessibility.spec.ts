@@ -49,7 +49,12 @@ test('default model role groups and selects have exact scoped accessible names',
   for (const roleLabel of ['General model', 'Alternative model']) {
     const group = page.getByRole('group', { name: roleLabel, exact: true });
     await expect(group).toBeVisible();
-    await expect(group.getByRole('combobox', { name: roleLabel, exact: true })).toBeVisible();
+    const model = group.getByRole('combobox', { name: roleLabel, exact: true });
+    await expect(model).toHaveValue('');
+    await expect(model.locator('option').first()).toHaveText('No explicit model');
+    await expect(group.getByRole('combobox', { name: `${roleLabel} context`, exact: true })).toHaveCount(0);
+    await expect(group.getByRole('combobox', { name: `${roleLabel} reasoning`, exact: true })).toHaveCount(0);
+    await model.selectOption('gpt-5-6-sol');
     await expect(group.getByRole('combobox', { name: `${roleLabel} context`, exact: true })).toBeVisible();
     await expect(group.getByRole('combobox', { name: `${roleLabel} reasoning`, exact: true })).toBeVisible();
   }
@@ -146,24 +151,30 @@ test('Composer sections and model role groups expose programmatic names and desc
   }
 
   const executionGroup = page.getByRole('group', { name: 'Approved execution model', exact: true });
+  const executionDescription = 'Used by approved implementation workers. Select No explicit model to leave model choice to Copilot CLI and emit no model descriptor.';
   await expect(executionGroup).toBeVisible();
-  await expect(executionGroup).toHaveAccessibleDescription('Used by approved implementation workers.');
-  await expect(executionGroup.getByText('Used by approved implementation workers.')).toHaveCSS('clip', 'rect(0px, 0px, 0px, 0px)');
-  await expect(executionGroup.getByRole('combobox', { name: 'Approved execution model', exact: true })).toBeVisible();
+  await expect(executionGroup).toHaveAccessibleDescription(executionDescription);
+  await expect(executionGroup.getByText(executionDescription)).toHaveCSS('clip', 'rect(0px, 0px, 0px, 0px)');
+  const executionModel = executionGroup.getByRole('combobox', { name: 'Approved execution model', exact: true });
+  await expect(executionModel).toHaveValue('');
+  await executionModel.selectOption('gpt-5-6-sol');
   await expect(executionGroup.getByRole('combobox', { name: 'Approved execution model context', exact: true })).toBeVisible();
   await expect(executionGroup.getByRole('combobox', { name: 'Approved execution model reasoning', exact: true })).toBeVisible();
 
   const reviewGroup = page.getByRole('group', { name: 'Planning and review model', exact: true });
+  const reviewDescription = 'Used by reviewers that critique execution waves. Select No explicit model to leave model choice to Copilot CLI and emit no model descriptor.';
   await expect(reviewGroup).toBeVisible();
-  await expect(reviewGroup).toHaveAccessibleDescription('Used by reviewers that critique execution waves.');
-  await expect(reviewGroup.getByText('Used by reviewers that critique execution waves.')).toHaveCSS('clip', 'rect(0px, 0px, 0px, 0px)');
-  await expect(reviewGroup.getByRole('combobox', { name: 'Planning and review model', exact: true })).toBeVisible();
+  await expect(reviewGroup).toHaveAccessibleDescription(reviewDescription);
+  await expect(reviewGroup.getByText(reviewDescription)).toHaveCSS('clip', 'rect(0px, 0px, 0px, 0px)');
+  const reviewModel = reviewGroup.getByRole('combobox', { name: 'Planning and review model', exact: true });
+  await expect(reviewModel).toHaveValue('');
+  await reviewModel.selectOption('gpt-5-6-sol');
   await expect(reviewGroup.getByRole('combobox', { name: 'Planning and review model context', exact: true })).toBeVisible();
   await expect(reviewGroup.getByRole('combobox', { name: 'Planning and review model reasoning', exact: true })).toBeVisible();
 
   const roleHelp = page.getByRole('button', { name: 'About Approved execution model' });
   await roleHelp.focus();
-  await expect(page.getByRole('tooltip')).toHaveText('Used by approved implementation workers.');
+  await expect(page.getByRole('tooltip')).toHaveText(executionDescription);
 });
 
 test('unavailable option help merges author guidance and availability in one tooltip', async ({ page }) => {

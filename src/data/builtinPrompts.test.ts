@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { composePrompt, initialOptionValues, initialVariableValues, type OptionValues, type VariableValues } from './composer';
+import { composePrompt, initialOptionValues, initialVariableValues, type BuiltInValues, type OptionValues, type VariableValues } from './composer';
 import { loadAppData } from './loaders';
 import type { Prompt } from './schemas';
 import { effectiveMatrixCardinality } from '../../scripts/lib/compositionMatrix';
@@ -59,12 +59,13 @@ function builtinPrompt(id: string): Prompt {
 function compose(
   prompt: Prompt,
   values: VariableValues,
-  optionValues: OptionValues = {}
+  optionValues: OptionValues = {},
+  builtIns: BuiltInValues = modelValues
 ) {
   return composePrompt(
     prompt,
     { ...initialVariableValues(prompt.variables), ...values },
-    modelValues,
+    builtIns,
     { optionValues: { ...initialOptionValues(prompt.options), ...optionValues } }
   );
 }
@@ -245,6 +246,54 @@ describe('Wave 2B built-in prompts', () => {
     expect(native.text).toContain(`native ${modelValues.model} subagents`);
     expect(independentFullStack.text).toContain(`sessions using ${modelValues.model}`);
     expect(independentFullStack.text).toContain('Full-stack independent execution:');
+  });
+
+  it('omits only optional model fragments and restores exact built-in prompt sentences', () => {
+    const investigate = builtinPrompt('investigate-a-topic');
+    const investigateOptions = selectOptions(investigate, 'parallelAgents');
+    const investigateDefault = compose(investigate, {}, investigateOptions, {});
+    const investigateExplicit = compose(investigate, {}, investigateOptions);
+    expect(investigateDefault.text).toContain('give each one to an agent with a standalone brief.');
+    expect(investigateExplicit.text).toContain(`give each one to an agent using ${modelValues.model} with a standalone brief.`);
+
+    const implementation = builtinPrompt('implementation-plan');
+    const implementationDefault = compose(implementation, {
+      goal: 'Deliver the agreed change.',
+      technicalScope: 'infer',
+      executionTarget: 'independentSessions'
+    }, {}, {});
+    const implementationExplicit = compose(implementation, {
+      goal: 'Deliver the agreed change.',
+      technicalScope: 'infer',
+      executionTarget: 'independentSessions'
+    });
+    expect(implementationDefault.text).toContain('use native reviewers to check the wave');
+    expect(implementationDefault.text).toContain('independent Copilot CLI sessions.');
+    expect(implementationDefault.text).toContain('have agents critique it');
+    expect(implementationExplicit.text).toContain(`use native ${modelValues.rubberDuckModel} reviewers to check the wave`);
+    expect(implementationExplicit.text).toContain(`independent Copilot CLI sessions using ${modelValues.model}.`);
+    expect(implementationExplicit.text).toContain(`have ${modelValues.rubberDuckModel} agents critique it`);
+
+    const reviewPullRequest = builtinPrompt('review-a-pull-request');
+    const reviewDefault = compose(reviewPullRequest, {}, {}, {});
+    const reviewExplicit = compose(reviewPullRequest, {});
+    expect(reviewDefault.text).toContain('Perform the primary review, and use a set of reviewers as independent second opinions.');
+    expect(reviewExplicit.text).toContain(
+      `Perform the primary review using ${modelValues.model}, and use a set of reviewers using ${modelValues.rubberDuckModel} as independent second opinions.`
+    );
+
+    const compare = builtinPrompt('compare-approaches');
+    const compareOptions = selectOptions(compare, 'steelman');
+    const compareDefault = compose(compare, { decision: 'Choose an approach.', approaches: 'A and B.' }, compareOptions, {});
+    const compareExplicit = compose(compare, { decision: 'Choose an approach.', approaches: 'A and B.' }, compareOptions);
+    expect(compareDefault.text).toContain('have a rubber-duck reviewer build the strongest honest case');
+    expect(compareExplicit.text).toContain(`have a rubber-duck reviewer using ${modelValues.rubberDuckModel} build the strongest honest case`);
+
+    const workingTree = builtinPrompt('review-working-tree-changes');
+    const workingTreeDefault = compose(workingTree, {}, {}, {});
+    const workingTreeExplicit = compose(workingTree, {});
+    expect(workingTreeDefault.text).toContain('Use reviewers as a second opinion');
+    expect(workingTreeExplicit.text).toContain(`Use ${modelValues.rubberDuckModel} reviewers as a second opinion`);
   });
 
   it('keeps both built-ins free of first-person personal wording', () => {

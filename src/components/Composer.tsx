@@ -1,8 +1,8 @@
 import { Input, Select, Slider, Text, Textarea, Tooltip, makeStyles } from '@fluentui/react-components';
 import { CheckmarkRegular, CheckmarkCircleRegular, ErrorCircleRegular, InfoRegular } from '@fluentui/react-icons';
 import { useCallback, useEffect, useId, useMemo, useState, type ReactNode } from 'react';
-import { composeModelLabel, composePrompt, initialOptionValues, initialVariableValues, normalizeOptionValues, promptUsesModelPlaceholder, promptUsesRubberDuckModelPlaceholder, type OptionValues, type VariableValues } from '../data/composer';
-import type { ModelPreset, ModelPresetVariant, Prompt, PromptOption, PromptVariable, ValidationIssue } from '../data/schemas';
+import { composeModelLabel, composePrompt, initialOptionValues, initialVariableValues, normalizeOptionValues, promptModelRoleRequirements, type OptionValues, type VariableValues } from '../data/composer';
+import type { ModelPreset, ModelPresetVariant, ModelRoleRequirement, Prompt, PromptOption, PromptVariable, ValidationIssue } from '../data/schemas';
 import { formatCount, shortcutModifier, shouldUseTextarea } from './promptUi';
 
 const useStyles = makeStyles({
@@ -616,6 +616,11 @@ type Props = {
   issues: ValidationIssue[];
 };
 
+type ModelSelection = {
+  id: string;
+  source: 'none' | 'user' | 'required-default';
+};
+
 function variantOptionText(variant: ModelPresetVariant, kind: 'context' | 'reasoning'): string {
   const label = variant.label.trim();
   // The group already names the axis, so drop a trailing "context" or "reasoning"
@@ -631,6 +636,34 @@ function variantSelection(variants: ModelPresetVariant[] | undefined, defaultId:
   return defaultId ?? variants[0].id;
 }
 
+function initialModelSelection(requirement: ModelRoleRequirement, defaultModelId: string): ModelSelection {
+  return requirement === 'required'
+    ? { id: defaultModelId, source: 'required-default' }
+    : { id: '', source: 'none' };
+}
+
+function reconcileModelSelection(
+  selection: ModelSelection,
+  requirement: ModelRoleRequirement,
+  defaultModelId: string
+): ModelSelection {
+  if (requirement === 'required') {
+    return selection.id
+      ? selection
+      : { id: defaultModelId, source: 'required-default' };
+  }
+  if (requirement === 'optional' && selection.source === 'required-default') {
+    return { id: '', source: 'none' };
+  }
+  return selection;
+}
+
+function modelRoleDescription(description: string, requirement: ModelRoleRequirement): string {
+  return requirement === 'optional'
+    ? `${description} Select No explicit model to leave model choice to Copilot CLI and emit no model descriptor.`
+    : description;
+}
+
 type ModelGroupProps = {
   styles: ComposerStyles;
   roleLabel: string;
@@ -640,6 +673,7 @@ type ModelGroupProps = {
   preset: ModelPreset | undefined;
   contextId: string;
   reasoningId: string;
+  allowOmission: boolean;
   placeholder: string;
   onPresetChange: (value: string) => void;
   onContextChange: (value: string) => void;
@@ -655,6 +689,7 @@ function ModelGroup({
   preset,
   contextId,
   reasoningId,
+  allowOmission,
   placeholder,
   onPresetChange,
   onContextChange,
@@ -694,7 +729,7 @@ function ModelGroup({
             disabled={presets.length === 0}
             onChange={(_, data) => onPresetChange(data.value)}
           >
-            {presetId ? null : <option value="">{placeholder}</option>}
+            {allowOmission ? <option value="">No explicit model</option> : presetId ? null : <option value="">{placeholder}</option>}
             {presets.map((item) => (
               <option key={item.id} value={item.id}>{item.label}</option>
             ))}
@@ -799,8 +834,8 @@ function OptionControl({
 
 export function Composer({ prompt, presets, issues }: Props) {
   const styles = useStyles();
-  const [modelId, setModelId] = useState<string>('');
-  const [rubberDuckModelId, setRubberDuckModelId] = useState<string>('');
+  const [modelSelection, setModelSelection] = useState<ModelSelection>({ id: '', source: 'none' });
+  const [rubberDuckModelSelection, setRubberDuckModelSelection] = useState<ModelSelection>({ id: '', source: 'none' });
   const [modelContextId, setModelContextId] = useState<string>('');
   const [modelReasoningId, setModelReasoningId] = useState<string>('');
   const [rubberDuckContextId, setRubberDuckContextId] = useState<string>('');
@@ -824,21 +859,22 @@ export function Composer({ prompt, presets, issues }: Props) {
     if (!prompt) {
       setValues({});
       setOptionValues({});
-      setModelId('');
-      setRubberDuckModelId('');
+      setModelSelection({ id: '', source: 'none' });
+      setRubberDuckModelSelection({ id: '', source: 'none' });
       return;
     }
     const defaultModelId = prompt.defaultModelId && presets.some((preset) => preset.id === prompt.defaultModelId) ? prompt.defaultModelId : presets[0]?.id ?? '';
     const initialValues = initialVariableValues(prompt.variables);
+    const initialRequirements = promptModelRoleRequirements(prompt);
     setValues(initialValues);
     setOptionValues(normalizeOptionValues(prompt, initialValues, initialOptionValues(prompt.options)));
-    setModelId(promptUsesModelPlaceholder(prompt) ? defaultModelId : '');
-    setRubberDuckModelId(promptUsesRubberDuckModelPlaceholder(prompt) ? defaultModelId : '');
+    setModelSelection(initialModelSelection(initialRequirements.model, defaultModelId));
+    setRubberDuckModelSelection(initialModelSelection(initialRequirements.rubberDuckModel, defaultModelId));
     setFeedback(undefined);
   }, [promptSignature, presetSignature]);
 
-  const selectedPreset = useMemo(() => presets.find((preset) => preset.id === modelId), [modelId, presets]);
-  const selectedRubberDuckPreset = useMemo(() => presets.find((preset) => preset.id === rubberDuckModelId), [rubberDuckModelId, presets]);
+  const selectedPreset = useMemo(() => presets.find((preset) => preset.id === modelSelection.id), [modelSelection.id, presets]);
+  const selectedRubberDuckPreset = useMemo(() => presets.find((preset) => preset.id === rubberDuckModelSelection.id), [rubberDuckModelSelection.id, presets]);
   const defaultModelId = prompt?.defaultModelId && presets.some((preset) => preset.id === prompt.defaultModelId)
     ? prompt.defaultModelId
     : presets[0]?.id ?? '';
@@ -892,6 +928,8 @@ export function Composer({ prompt, presets, issues }: Props) {
   }, [composition, prompt]);
   const usesModel = composition?.usesModelPlaceholder;
   const usesRubberDuck = composition?.usesRubberDuckModelPlaceholder;
+  const modelRequirement = composition?.modelRoleRequirements.model ?? 'inactive';
+  const rubberDuckModelRequirement = composition?.modelRoleRequirements.rubberDuckModel ?? 'inactive';
 
   function updateVariable(name: string, nextValue: string) {
     if (!prompt) return;
@@ -930,9 +968,12 @@ export function Composer({ prompt, presets, issues }: Props) {
   }, [copyComposedPrompt]);
 
   useEffect(() => {
-    if (usesModel && !modelId) setModelId(defaultModelId);
-    if (usesRubberDuck && !rubberDuckModelId) setRubberDuckModelId(defaultModelId);
-  }, [defaultModelId, modelId, rubberDuckModelId, usesModel, usesRubberDuck]);
+    setModelSelection((current) => reconcileModelSelection(current, modelRequirement, defaultModelId));
+  }, [defaultModelId, modelRequirement]);
+
+  useEffect(() => {
+    setRubberDuckModelSelection((current) => reconcileModelSelection(current, rubberDuckModelRequirement, defaultModelId));
+  }, [defaultModelId, rubberDuckModelRequirement]);
 
   if (!prompt) {
     return <Text className={styles.emptyInputs}>Select a prompt to compose it.</Text>;
@@ -1054,14 +1095,18 @@ export function Composer({ prompt, presets, issues }: Props) {
                   <ModelGroup
                     styles={styles}
                     roleLabel={prompt.modelRoles?.model?.label ?? 'General model'}
-                    roleDescription={prompt.modelRoles?.model?.description ?? 'Used by the primary model placeholder in this prompt.'}
+                    roleDescription={modelRoleDescription(
+                      prompt.modelRoles?.model?.description ?? 'Used by the primary model placeholder in this prompt.',
+                      modelRequirement
+                    )}
                     presets={presets}
-                    presetId={modelId}
+                    presetId={modelSelection.id}
                     preset={selectedPreset}
                     contextId={modelContextId}
                     reasoningId={modelReasoningId}
+                    allowOmission={modelRequirement === 'optional'}
                     placeholder="Select a model preset"
-                    onPresetChange={setModelId}
+                    onPresetChange={(id) => setModelSelection({ id, source: 'user' })}
                     onContextChange={setModelContextId}
                     onReasoningChange={setModelReasoningId}
                   />
@@ -1070,14 +1115,18 @@ export function Composer({ prompt, presets, issues }: Props) {
                   <ModelGroup
                     styles={styles}
                     roleLabel={prompt.modelRoles?.rubberDuckModel?.label ?? 'Alternative model'}
-                    roleDescription={prompt.modelRoles?.rubberDuckModel?.description ?? 'Used by the alternative model placeholder in this prompt.'}
+                    roleDescription={modelRoleDescription(
+                      prompt.modelRoles?.rubberDuckModel?.description ?? 'Used by the alternative model placeholder in this prompt.',
+                      rubberDuckModelRequirement
+                    )}
                     presets={presets}
-                    presetId={rubberDuckModelId}
+                    presetId={rubberDuckModelSelection.id}
                     preset={selectedRubberDuckPreset}
                     contextId={rubberDuckContextId}
                     reasoningId={rubberDuckReasoningId}
+                    allowOmission={rubberDuckModelRequirement === 'optional'}
                     placeholder="Select an alternative model preset"
-                    onPresetChange={setRubberDuckModelId}
+                    onPresetChange={(id) => setRubberDuckModelSelection({ id, source: 'user' })}
                     onContextChange={setRubberDuckContextId}
                     onReasoningChange={setRubberDuckReasoningId}
                   />

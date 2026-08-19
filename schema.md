@@ -104,9 +104,13 @@ Continue without optional artifacts.
 - Use `{{#allOptionsDisabled}}...{{/allOptionsDisabled}}` for prompt-specific fallback text when at least one option is visible and every visible option is effectively false. A state with no visible options does not render the fallback.
 - Disabled option blocks are omitted from the copied prompt. They do not add instructions to avoid or deprioritize that topic.
 - Keep mandatory safety, quality, and workflow instructions outside optional blocks.
-- Conditional blocks must be self-contained. Nested option, all-options-disabled, or value-condition blocks are not supported.
+- Workflow blocks must be self-contained. Nested option, all-options-disabled, or value-condition blocks are not supported. A single-line `{{#model role}}...{{/model}}` fragment may appear inside one of those blocks.
 - `{{model}}` is a built-in placeholder populated from the selected general model preset.
 - `{{rubberDuckModel}}` is a built-in placeholder populated from the selected alternative model preset for rubber-duck or reviewer agents.
+- A direct model placeholder is required and keeps the current default-preset behavior.
+- Use `{{#model model}}...{{/model}}` or `{{#model rubberDuckModel}}...{{/model}}` to make only the enclosed model descriptor optional. Optional roles start at **No explicit model**; their complete fragment is omitted until the user selects a preset.
+- A model fragment must stay on one line and contain exactly one matching built-in placeholder. It cannot contain another placeholder or block. It may be nested inside one workflow block, but it cannot wrap a workflow block.
+- Put spaces, punctuation, backticks, and connectors that belong only to the descriptor inside the fragment. Prompt Bank does not normalize ordinary inline spacing.
 - Frontmatter may declare `model_roles.model` and `model_roles.rubberDuckModel`, each with a non-empty `label` and `description`. Roles change presentation only; they do not route work or invoke a model.
 - Built-in placeholder names are reserved. Do not declare prompt variables named `model` or `rubberDuckModel`.
 - Preserve direct/operator tone: tell the agent what to do, what to avoid, and what to return.
@@ -304,7 +308,7 @@ Command snippets should be shell-ready after composition. Keep them explicit and
 
 ## Model roles and defaults
 
-Use `gpt-5-6-sol` by default. Choose a different preset only when the prompt clearly requires a different model profile.
+Use `gpt-5-6-sol` as the default for required model placeholders. Optional model fragments omit model guidance until the user explicitly chooses a preset.
 
 Model presets live in `model-presets.yaml` and are descriptive copy guidance only. They label the copied prompt text for the user; they are not routing, provider, or execution configuration.
 
@@ -320,7 +324,16 @@ model_roles:
     description: Used to critique plans and review execution waves.
 ```
 
-Only `model` and `rubberDuckModel` are supported. Each role requires both fields. Metadata is shown only when the corresponding placeholder is active. It does not change interpolation, execute a prompt, select a provider, or route work.
+Only `model` and `rubberDuckModel` are supported. Each role requires both fields. Metadata is shown when the corresponding direct placeholder or optional fragment is active. It does not change interpolation, execute a prompt, select a provider, or route work.
+
+Wrap only the descriptor and its grammatical connector when model guidance should be optional:
+
+```markdown
+Use native{{#model model}} `{{model}}`{{/model}} investigation agents.
+Employ reviewers{{#model rubberDuckModel}} using `{{rubberDuckModel}}`{{/model}}.
+```
+
+With **No explicit model**, these compose as `Use native investigation agents.` and `Employ reviewers.` Context and Reasoning are hidden. Selecting a preset restores the fragment and reveals its Context and Reasoning controls. If the same active role also has a direct placeholder, required behavior takes precedence.
 
 A preset may declare `contexts` and `reasoning`, each a list of variants with a kebab-case `id` and a `label`. The composer shows a Context dropdown for a declared `contexts` list and a Reasoning dropdown for a declared `reasoning` list, preserving each list's declared order. The copied text becomes the model label followed by the selected labels from any declared lists, joined by spaces. Use `default_context` and `default_reasoning` to preselect a variant; without them the first entry wins. This presentation does not change the preset format or the discrete sliders declared by generic prompt variables with `control: slider`.
 

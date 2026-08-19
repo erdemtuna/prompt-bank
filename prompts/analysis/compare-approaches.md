@@ -55,7 +55,7 @@ Be concrete about where each one breaks down. Every approach has a case it handl
 - Maintenance: what each option is like to live with once it is no longer new. Who has to understand it, what it makes harder, and what it drags along as a dependency.
 {{/option}}
 {{#option steelman}}
-- Steel-man: have {{rubberDuckModel}} build the strongest honest case for whichever option you did not recommend, then answer it. If you cannot answer it, weaken your recommendation.
+- Steel-man: have a rubber-duck reviewer{{#model rubberDuckModel}} using {{rubberDuckModel}}{{/model}} build the strongest honest case for whichever option you did not recommend, then answer it. If you cannot answer it, weaken your recommendation.
 {{/option}}
 {{#allOptionsDisabled}}
 - Compare them on the stated criteria, and cover tradeoffs and risk.

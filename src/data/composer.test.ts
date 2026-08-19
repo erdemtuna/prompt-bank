@@ -40,8 +40,45 @@ describe('composer', () => {
   it('detects model placeholder usage', () => {
     expect(promptUsesModelPlaceholder(makePrompt('Use {{ model }}.'))).toBe(true);
     expect(promptUsesRubberDuckModelPlaceholder(makePrompt('Use {{ rubberDuckModel }}.'))).toBe(true);
+    expect(promptUsesModelPlaceholder(makePrompt('Use native{{#model model}} {{model}}{{/model}} agents.'))).toBe(true);
     expect(promptUsesModelPlaceholder(makePrompt('No built-in placeholder.'))).toBe(false);
     expect(promptUsesRubberDuckModelPlaceholder(makePrompt('No built-in placeholder.'))).toBe(false);
+  });
+
+  it('omits optional model fragments without blocking copy and restores only the selected descriptor', () => {
+    const prompt = makePrompt('Use native{{#model model}} `{{model}}`{{/model}} investigation agents for {{name}} in {{place}}.');
+    const omitted = composePrompt(prompt, { name: 'review', place: 'repo' });
+    const explicit = composePrompt(prompt, { name: 'review', place: 'repo' }, { model: 'GPT-5.6 Sol 1M context medium reasoning' });
+
+    expect(omitted.text).toBe('Use native investigation agents for review in repo.');
+    expect(omitted.canCopy).toBe(true);
+    expect(omitted.missingBuiltIns).toEqual([]);
+    expect(omitted.modelRoleRequirements.model).toBe('optional');
+    expect(explicit.text).toBe('Use native `GPT-5.6 Sol 1M context medium reasoning` investigation agents for review in repo.');
+    expect(explicit.canCopy).toBe(true);
+    expect(explicit.modelRoleRequirements.model).toBe('optional');
+  });
+
+  it('keeps direct model placeholders required when the same role also has optional fragments', () => {
+    const prompt = makePrompt('Use {{model}} directly and agents{{#model model}} using {{model}}{{/model}} for {{name}} in {{place}}.');
+    const missing = composePrompt(prompt, { name: 'review', place: 'repo' });
+    const explicit = composePrompt(prompt, { name: 'review', place: 'repo' }, { model: 'GPT' });
+
+    expect(missing.modelRoleRequirements.model).toBe('required');
+    expect(missing.missingBuiltIns).toEqual(['model']);
+    expect(missing.canCopy).toBe(false);
+    expect(explicit.text).toBe('Use GPT directly and agents using GPT for review in repo.');
+  });
+
+  it('ignores preset and invalid-default blockers for omitted optional roles', () => {
+    const prompt = makePrompt('Use agents{{#model model}} using {{model}}{{/model}} for {{name}} in {{place}}.', 'prompt', 'missing-model');
+    const issues = [
+      { scope: 'preset' as const, path: 'model-presets.yaml', message: 'Duplicate model preset id "gpt".' },
+      { scope: 'prompt' as const, path: 'prompt.md', message: 'Default model preset "missing-model" does not exist.' }
+    ];
+
+    expect(composePrompt(prompt, { name: 'review', place: 'repo' }, {}, { validationIssues: issues }).canCopy).toBe(true);
+    expect(composePrompt(prompt, { name: 'review', place: 'repo' }, { model: 'GPT' }, { validationIssues: issues }).canCopy).toBe(false);
   });
 
   it('disables composition validity when required values are empty', () => {
@@ -1303,6 +1340,82 @@ describe('prompt validation', () => {
     expect(sequential.issues).toEqual([]);
     expect(nested.issues.some((issue) => issue.message.includes('Nested conditional blocks are not supported'))).toBe(true);
     expect(malformed.issues.some((issue) => issue.message.includes('Invalid condition block syntax'))).toBe(true);
+  });
+
+  it('validates optional model fragments and permits them only inside workflow blocks', () => {
+    const validWhen = parsePromptFile(
+      'prompts/model-when.md',
+      [
+        '---',
+        'id: model-when',
+        'title: Model when',
+        'description: Optional model under a condition',
+        'category: planning',
+        'variables:',
+        '  - name: delivery',
+        '    control: select',
+        '    default: conversation',
+        '    choices:',
+        '      - id: conversation',
+        '      - id: report',
+        '---',
+        '{{#when delivery conversation}}Use agents{{#model model}} using {{model}}{{/model}}.{{/when}}'
+      ].join('\n')
+    );
+    const validOption = parsePromptFile(
+      'prompts/model-option.md',
+      [
+        '---',
+        'id: model-option',
+        'title: Model option',
+        'description: Optional model under an option',
+        'category: planning',
+        'options:',
+        '  - id: review',
+        '---',
+        '{{#option review}}Use reviewers{{#model rubberDuckModel}} using {{rubberDuckModel}}{{/model}}.{{/option}}',
+        '{{#allOptionsDisabled}}Review directly{{#model model}} using {{model}}{{/model}}.{{/allOptionsDisabled}}'
+      ].join('\n')
+    );
+
+    expect(validWhen.issues).toEqual([]);
+    expect(validOption.issues).toEqual([]);
+
+    const invalidCases = [
+      ['wrong role', '{{#model model}} using {{rubberDuckModel}}{{/model}}', 'may contain only the matching'],
+      ['duplicate', '{{#model model}}{{model}} and {{model}}{{/model}}', 'must contain exactly one matching'],
+      ['missing', '{{#model model}} using a preset{{/model}}', 'must contain exactly one matching'],
+      ['multiline', '{{#model model}} using\\n{{model}}{{/model}}', 'must stay on one line'],
+      ['multiline tag', '{{#model\\nmodel}} using {{model}}{{/model}}', 'Invalid model block syntax'],
+      ['nested model', '{{#model model}}{{#model model}}{{model}}{{/model}}{{/model}}', 'Nested model blocks are not supported'],
+      ['model wraps condition', '{{#model model}}{{model}}{{#when delivery conversation}}Now{{/when}}{{/model}}', 'Nested conditional blocks are not supported'],
+      ['unclosed', '{{#model model}}{{model}}', 'Unclosed model block'],
+      ['stray close', 'Use agents{{/model}}.', 'Stray closing model block'],
+      ['malformed', '{{#model other}}{{model}}{{/model}}', 'Invalid model block syntax']
+    ] as const;
+
+    for (const [id, template, expectedIssue] of invalidCases) {
+      const result = parsePromptFile(
+        `prompts/${id.replaceAll(' ', '-')}.md`,
+        [
+          '---',
+          `id: ${id.replaceAll(' ', '-')}`,
+          `title: ${id}`,
+          'description: Invalid optional model fragment',
+          'category: planning',
+          'variables:',
+          '  - name: delivery',
+          '    control: select',
+          '    default: conversation',
+          '    choices:',
+          '      - id: conversation',
+          '      - id: report',
+          '---',
+          template.replace('\\n', '\n')
+        ].join('\n')
+      );
+      expect(result.issues.some((issue) => issue.message.includes(expectedIssue)), id).toBe(true);
+    }
   });
 
   it('parses standalone compound condition tags with LF and CRLF', () => {

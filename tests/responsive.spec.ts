@@ -188,6 +188,11 @@ test('common model role labels stay on one line without starving aligned variant
   await page.goto(composerFixture);
   await page.evaluate(() => (document as unknown as { fonts: { ready: Promise<unknown> } }).fonts.ready);
   const rail = page.locator('aside[aria-label="Prompt inputs"]');
+  for (const roleLabel of ['Approved execution model', 'Planning and review model']) {
+    await page.getByRole('group', { name: roleLabel, exact: true })
+      .getByRole('combobox', { name: roleLabel, exact: true })
+      .selectOption('gpt-5-6-sol');
+  }
   for (const railWidth of [340, 360, 380]) {
     await rail.locator('..').evaluate((workspace, width) => {
       workspace.style.gridTemplateColumns = `minmax(0, 1fr) ${width}px`;
@@ -281,6 +286,7 @@ test('model, context, and reasoning stack in order at narrow viewport width', as
   await page.setViewportSize({ width: 390, height: 900 });
   await page.goto(composerFixture);
   const card = page.getByRole('group', { name: 'Approved execution model', exact: true });
+  await card.getByRole('combobox', { name: 'Approved execution model', exact: true }).selectOption('gpt-5-6-sol');
   const narrowBoxes = await card.locator('[data-model-field]').evaluateAll((fields) =>
     fields.map((field) => {
       const box = field.getBoundingClientRect();
@@ -302,6 +308,7 @@ test('model grid stacks when its rail container is constrained to 280px', async 
   });
 
   const card = page.getByRole('group', { name: 'Approved execution model', exact: true });
+  await card.getByRole('combobox', { name: 'Approved execution model', exact: true }).selectOption('gpt-5-6-sol');
   const geometry = await card.locator('[data-model-field]').evaluateAll((fields) =>
     fields.map((field) => {
       const box = field.getBoundingClientRect();

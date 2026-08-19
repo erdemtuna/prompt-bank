@@ -191,9 +191,18 @@ A conditional block tag that sits on its own line is treated as a control line a
 
 ## Model roles and preset labels
 
-Two built in placeholders insert a descriptive model label chosen in the interface. Use `{{model}}` for the general model and `{{rubberDuckModel}}` for an alternative or reviewer model. Do not declare variables named `model` or `rubberDuckModel`. Set `model_default` to a preset id from `model-presets.yaml` to preselect one.
+Two built in placeholders insert a descriptive model label chosen in the interface. Use `{{model}}` for the general model and `{{rubberDuckModel}}` for an alternative or reviewer model. Do not declare variables named `model` or `rubberDuckModel`. A direct placeholder is required. Set `model_default` to a preset id from `model-presets.yaml` to preselect required roles.
 
 When a preset declares `contexts`, the interface shows a Context dropdown beside that model; when it declares `reasoning`, the interface shows a Reasoning dropdown. The interface folds the declared choices into the same placeholder, so a prompt written as `{{model}}` can copy as `GPT-5.6 Terra 1M context medium reasoning` without any change to the template. The declared choice order, defaults, and preset YAML format are unchanged. See `schema.md` for the preset format.
+
+To leave model choice to Copilot CLI by default, wrap only the descriptor and its connector in a model fragment:
+
+```markdown
+Use native{{#model model}} `{{model}}`{{/model}} investigation agents.
+Employ reviewers{{#model rubberDuckModel}} using `{{rubberDuckModel}}`{{/model}}.
+```
+
+The model dropdown starts at **No explicit model**, the fragment is omitted, and Context and Reasoning stay hidden. Selecting a preset restores only the fragment. Keep the fragment on one line with exactly one matching placeholder. It may appear inside an option, all-options-disabled, or value-condition block, but it cannot contain another placeholder or block.
 
 Use `model_roles` to explain what each active placeholder means for this prompt:
 
@@ -217,10 +226,10 @@ variables:
     required: true
 ---
 
-Plan for {{goal}}. Design it for {{model}} to execute, then have {{rubberDuckModel}} critique the plan.
+Plan for {{goal}}. Design it for workers{{#model model}} using {{model}}{{/model}} to execute, then have reviewers{{#model rubberDuckModel}} using {{rubberDuckModel}}{{/model}} critique the plan.
 ```
 
-Only the `model` and `rubberDuckModel` role keys are supported, and each needs a label and description. The role label appears as the first model-field label rather than a separate card heading, and its description remains available with that field. Role metadata changes presentation only. Preset labels and roles are copy guidance; Prompt Bank never calls a model or routes work.
+Only the `model` and `rubberDuckModel` role keys are supported, and each needs a label and description. The role label appears as the first model-field label rather than a separate card heading, and its description remains available with that field. If a role is active only through optional fragments, its dropdown includes **No explicit model** and each role can be selected independently. Role metadata changes presentation only. Preset labels and roles are copy guidance; Prompt Bank never calls a model or routes work.
 
 ## Composer order
 
@@ -228,7 +237,7 @@ The composer groups visible controls in this order:
 
 1. **Workflow** — selects and discrete sliders declared by prompt variables.
 2. **Focus areas** — additive options, including visible disabled options with an availability explanation.
-3. **Model guidance** — active model roles, with the role as the first model-field label, plus a Context dropdown for a declared `contexts` list and a Reasoning dropdown for a declared `reasoning` list.
+3. **Model guidance** — active model roles, with the role as the first model-field label. Optional roles start at **No explicit model**; Context and Reasoning appear after selecting a preset.
 4. **Context** — text and textarea inputs.
 5. **Raw template**.
 
@@ -273,5 +282,6 @@ Common errors it catches:
 - A prompt that declares options but has no `{{#allOptionsDisabled}}` fallback.
 - Incomplete or unsupported `model_roles` metadata.
 - A `model_default` that does not match a preset id.
+- A malformed, multiline, mismatched, nested, or empty optional model fragment.
 
 Keep prompts generic. Do not include personal, employer, or proprietary content.

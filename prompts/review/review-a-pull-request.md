@@ -37,7 +37,7 @@ Intent:
 
 Read the actual diff before forming an opinion. Do not review the description alone, and do not assume a file is unchanged because the description does not mention it.
 
-Use {{model}} as the primary reviewer, and a set of {{rubberDuckModel}} reviewers as independent second opinions. Give each reviewer one of the perspectives below so they work from different angles, and add one reviewer who looks at the change holistically. Reserve them for genuinely separate threads of judgment, not for simple lookups. Reconcile their findings yourself, and say plainly when two reviewers disagree rather than averaging them away.
+Perform the primary review{{#model model}} using {{model}}{{/model}}, and use a set of reviewers{{#model rubberDuckModel}} using {{rubberDuckModel}}{{/model}} as independent second opinions. Give each reviewer one of the perspectives below so they work from different angles, and add one reviewer who looks at the change holistically. Reserve them for genuinely separate threads of judgment, not for simple lookups. Reconcile their findings yourself, and say plainly when two reviewers disagree rather than averaging them away.
 
 Review from these perspectives. If none is selected, do a general readiness pass instead.
 

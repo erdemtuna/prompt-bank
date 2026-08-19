@@ -3,8 +3,11 @@ import {
   extractApplicabilityVariableNames,
   extractConditionVariableNames,
   extractPlaceholders,
+  modelRoleRequirements,
+  renderPromptTemplateModels,
   renderPromptTemplateControls,
   type ModelPreset,
+  type ModelRoleRequirements,
   type Prompt,
   type PromptApplicability,
   type PromptOption,
@@ -36,6 +39,7 @@ export type CompositionResult = {
   disabledReasons: string[];
   usesModelPlaceholder: boolean;
   usesRubberDuckModelPlaceholder: boolean;
+  modelRoleRequirements: ModelRoleRequirements;
   applicability: PromptApplicability;
   effectiveOptionValues: OptionValues;
   isValid: boolean;
@@ -100,23 +104,31 @@ export function normalizeOptionValues(
 }
 
 export function promptUsesModelPlaceholder(prompt: Prompt): boolean {
-  return extractPlaceholders(renderPromptTemplate(prompt, initialOptionValues(prompt.options), initialVariableValues(prompt.variables))).includes('model');
+  return promptModelRoleRequirements(prompt).model !== 'inactive';
 }
 
 export function promptUsesRubberDuckModelPlaceholder(prompt: Prompt): boolean {
-  return extractPlaceholders(renderPromptTemplate(prompt, initialOptionValues(prompt.options), initialVariableValues(prompt.variables))).includes('rubberDuckModel');
+  return promptModelRoleRequirements(prompt).rubberDuckModel !== 'inactive';
+}
+
+export function promptModelRoleRequirements(prompt: Prompt): ModelRoleRequirements {
+  return modelRoleRequirements(
+    renderPromptWorkflowTemplate(prompt, initialOptionValues(prompt.options), initialVariableValues(prompt.variables))
+  );
 }
 
 export function composePrompt(prompt: Prompt, values: VariableValues, builtIns: BuiltInValues = {}, options: CompositionOptions = {}): CompositionResult {
   const requestedOptionValues = { ...initialOptionValues(prompt.options), ...(options.optionValues ?? {}) };
   const variableValues = { ...initialVariableValues(prompt.variables), ...values };
   const controlState = resolvePromptControlState(prompt, variableValues, requestedOptionValues);
-  const renderedTemplate = renderPromptTemplate(prompt, controlState.effectiveOptionValues, variableValues, controlState);
+  const workflowTemplate = renderPromptWorkflowTemplate(prompt, controlState.effectiveOptionValues, variableValues, controlState);
+  const roleRequirements = modelRoleRequirements(workflowTemplate);
+  const renderedTemplate = renderPromptTemplateModels(workflowTemplate, builtIns);
   const placeholders = extractPlaceholders(renderedTemplate);
   const conditionVariableNames = extractConditionVariableNames(prompt.template);
   const applicabilityVariableNames = extractApplicabilityVariableNames(prompt);
-  const usesModelPlaceholder = placeholders.includes('model');
-  const usesRubberDuckModelPlaceholder = placeholders.includes('rubberDuckModel');
+  const usesModelPlaceholder = roleRequirements.model !== 'inactive';
+  const usesRubberDuckModelPlaceholder = roleRequirements.rubberDuckModel !== 'inactive';
   const usesAnyModelPlaceholder = usesModelPlaceholder || usesRubberDuckModelPlaceholder;
   const hasConditionalBlocks = prompt.options.length > 0 || conditionVariableNames.length > 0 || applicabilityVariableNames.length > 0;
   const activeVariableNames = !hasConditionalBlocks
@@ -144,7 +156,18 @@ export function composePrompt(prompt: Prompt, values: VariableValues, builtIns: 
     )
     .map((variable) => variable.name);
   const missingBuiltIns = modelBuiltIns.filter((name) => placeholders.includes(name) && !builtIns[name]?.trim());
-  const validationBlockers = validationBlockersForPrompt(prompt, options.validationIssues ?? [], usesAnyModelPlaceholder);
+  const usesSelectedOrRequiredModel = modelBuiltIns.some((name) =>
+    roleRequirements[name] === 'required'
+    || (roleRequirements[name] === 'optional' && Boolean(builtIns[name]?.trim()))
+  );
+  const requiresDefaultModel = modelBuiltIns.some((name) => roleRequirements[name] === 'required');
+  const validationBlockers = validationBlockersForPrompt(
+    prompt,
+    options.validationIssues ?? [],
+    usesAnyModelPlaceholder,
+    usesSelectedOrRequiredModel,
+    requiresDefaultModel
+  );
 
   const text = renderedTemplate.replace(/{{\s*([A-Za-z_][A-Za-z0-9_]*)\s*}}/g, (_, name: string) => {
     if (isModelBuiltIn(name) && !builtIns[name]?.trim()) {
@@ -173,6 +196,7 @@ export function composePrompt(prompt: Prompt, values: VariableValues, builtIns: 
     disabledReasons,
     usesModelPlaceholder,
     usesRubberDuckModelPlaceholder,
+    modelRoleRequirements: roleRequirements,
     applicability: controlState.applicability,
     effectiveOptionValues: controlState.effectiveOptionValues,
     isValid: disabledReasons.length === 0,
@@ -180,7 +204,7 @@ export function composePrompt(prompt: Prompt, values: VariableValues, builtIns: 
   };
 }
 
-function renderPromptTemplate(
+function renderPromptWorkflowTemplate(
   prompt: Prompt,
   optionValues: OptionValues,
   variableValues: VariableValues,
@@ -208,11 +232,18 @@ function interpolatedVariableValue(variable: PromptVariable, rawValue: string): 
   return choice?.value ?? choice?.label ?? rawValue;
 }
 
-function validationBlockersForPrompt(prompt: Prompt, issues: ValidationIssue[], usesAnyModelPlaceholder: boolean): string[] {
+function validationBlockersForPrompt(
+  prompt: Prompt,
+  issues: ValidationIssue[],
+  usesAnyModelPlaceholder: boolean,
+  usesSelectedOrRequiredModel: boolean,
+  requiresDefaultModel: boolean
+): string[] {
   return issues
     .filter((issue) => {
       if (issue.scope === 'global') return true;
-      if (issue.scope === 'preset') return usesAnyModelPlaceholder;
+      if (issue.scope === 'preset') return usesSelectedOrRequiredModel;
+      if (isDefaultModelIssue(issue) && !requiresDefaultModel) return false;
       if (!usesAnyModelPlaceholder && isDefaultModelIssue(issue)) return false;
       return issueAppliesToPrompt(issue, prompt);
     })

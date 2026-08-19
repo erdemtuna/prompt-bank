@@ -81,7 +81,7 @@ Create and critique the plan in this session. Use native planning or review agen
 
 Break the work into ordered waves rather than a flat list of steps. A wave is a group of changes that can be built and verified together. Each wave must state what it changes, which files it touches, what proves it worked, and what the next wave is allowed to assume.
 
-Put a coordinator-owned review gate at the end of every wave. At each gate, use native {{rubberDuckModel}} reviewers to check the wave against its own success criteria before the next wave starts, and fix what they find before moving on. The point of the gate is to catch a wrong assumption while it is still one wave deep instead of letting it propagate.
+Put a coordinator-owned review gate at the end of every wave. At each gate, use native{{#model rubberDuckModel}} {{rubberDuckModel}}{{/model}} reviewers to check the wave against its own success criteria before the next wave starts, and fix what they find before moving on. The point of the gate is to catch a wrong assumption while it is still one wave deep instead of letting it propagate.
 
 Write each wave so it stands alone: name the repository, the branch, the exact scope, the files in scope, and what to report back, because whoever picks up a wave may have none of this conversation.
 
@@ -91,10 +91,10 @@ Reuse prior analysis and any existing mockups or diagrams. Do not recreate a rig
 - Approved execution: design the waves for the current coordinator to implement directly in this session. Keep ownership and handoffs simple, but preserve the review gates and dependency order.
 {{/when}}
 {{#when executionTarget nativeSubagents}}
-- Approved execution: design implementation waves for native {{model}} subagents managed by the current coordinator. State each agent brief, dependencies, allowed scope, completion contract, and the evidence the coordinator must review before advancing.
+- Approved execution: design implementation waves for native{{#model model}} {{model}}{{/model}} subagents managed by the current coordinator. State each agent brief, dependencies, allowed scope, completion contract, and the evidence the coordinator must review before advancing.
 {{/when}}
 {{#when executionTarget independentSessions}}
-- Approved execution: design implementation waves for independent Copilot CLI sessions using {{model}}. Do not launch them while creating this plan. For every session, state its repository, worktree, branch, standalone brief, allowed scope, dependencies, completion contract, result location, merge order, model/context/reasoning guidance, and recovery or resume instructions. Give concurrent sessions separate worktrees so they cannot collide. Keep the current coordinator responsible for reviewing results, merging completed waves, and advancing dependencies.
+- Approved execution: design implementation waves for independent Copilot CLI sessions{{#model model}} using {{model}}{{/model}}. Do not launch them while creating this plan. For every session, state its repository, worktree, branch, standalone brief, allowed scope, dependencies, completion contract, result location, merge order, model/context/reasoning guidance, and recovery or resume instructions. Give concurrent sessions separate worktrees so they cannot collide. Keep the current coordinator responsible for reviewing results, merging completed waves, and advancing dependencies.
 {{/when}}
 
 {{#when technicalScope infer}}
@@ -129,7 +129,7 @@ Reuse prior analysis and any existing mockups or diagrams. Do not recreate a rig
 - Keep the plan lean: ordered waves, what each one changes, and how you know it is done.
 {{/allOptionsDisabled}}
 
-Before you present the plan, have {{rubberDuckModel}} agents critique it from different angles and fold in what holds up.
+Before you present the plan, have{{#model rubberDuckModel}} {{rubberDuckModel}}{{/model}} agents critique it from different angles and fold in what holds up.
 
 Then surface every open question and uncertain assumption with enough context for a decision. Do not bury them in a list at the end. Resolve answered questions into the plan itself.
 

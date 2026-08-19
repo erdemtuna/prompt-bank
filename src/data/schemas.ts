@@ -50,6 +50,10 @@ export type ModelRole = {
 
 export type PromptModelRoles = Partial<Record<ModelRoleName, ModelRole>>;
 
+export type ModelRoleRequirement = 'inactive' | 'optional' | 'required';
+
+export type ModelRoleRequirements = Record<ModelRoleName, ModelRoleRequirement>;
+
 export type PromptSource = 'builtin' | 'global' | 'folder';
 
 export type ParsedPrompt = {
@@ -543,6 +547,32 @@ export function renderPromptTemplateControls(
   );
 }
 
+export function modelRoleRequirements(template: string): ModelRoleRequirements {
+  const optionalRoles = new Set<ModelRoleName>();
+  const withoutModelFragments = normalizeLineEndings(template).replace(
+    /\{\{[ \t]*#model[ \t]+(model|rubberDuckModel)[ \t]*\}\}[\s\S]*?\{\{[ \t]*\/model[ \t]*\}\}/g,
+    (_, role: ModelRoleName) => {
+      optionalRoles.add(role);
+      return '';
+    }
+  );
+  const directPlaceholders = new Set(extractPlaceholders(withoutModelFragments));
+
+  return {
+    model: directPlaceholders.has('model') ? 'required' : optionalRoles.has('model') ? 'optional' : 'inactive',
+    rubberDuckModel: directPlaceholders.has('rubberDuckModel') ? 'required' : optionalRoles.has('rubberDuckModel') ? 'optional' : 'inactive'
+  };
+}
+
+export function renderPromptTemplateModels(template: string, values: Partial<Record<ModelRoleName, string | undefined>>): string {
+  return cleanRenderedTemplate(
+    normalizeLineEndings(template).replace(
+      /\{\{[ \t]*#model[ \t]+(model|rubberDuckModel)[ \t]*\}\}([\s\S]*?)\{\{[ \t]*\/model[ \t]*\}\}/g,
+      (_, role: ModelRoleName, content: string) => values[role]?.trim() ? content : ''
+    )
+  );
+}
+
 function renderWhenBlocks(
   template: string,
   variableValues: Record<string, string>,
@@ -582,7 +612,13 @@ function validateTemplatePlaceholders(
   const unknownPlaceholders = new Set<string>();
   const usedOptionIds = new Set<string>();
   let hasAllOptionsDisabledBlock = false;
-  const blockStack: { kind: 'option' | 'allOptionsDisabled' | 'when'; raw: string; optionId?: string }[] = [];
+  const blockStack: {
+    kind: 'option' | 'allOptionsDisabled' | 'when' | 'model';
+    raw: string;
+    optionId?: string;
+    role?: ModelRoleName;
+    placeholderCount?: number;
+  }[] = [];
 
   for (const span of extractTemplateSpans(template)) {
     if (span.kind === 'invalid') {
@@ -591,6 +627,15 @@ function validateTemplatePlaceholders(
     }
 
     if (span.kind === 'placeholder') {
+      const modelBlock = [...blockStack].reverse().find((block) => block.kind === 'model');
+      if (modelBlock) {
+        modelBlock.placeholderCount = (modelBlock.placeholderCount ?? 0) + 1;
+        if (span.name !== modelBlock.role) {
+          issues.push(promptIssue(path, `Model block "${modelBlock.raw}" may contain only the matching {{${modelBlock.role}}} placeholder.`));
+        } else if (modelBlock.placeholderCount > 1) {
+          issues.push(promptIssue(path, `Model block "${modelBlock.raw}" must contain exactly one matching {{${modelBlock.role}}} placeholder.`));
+        }
+      }
       if (!declaredVariables.has(span.name) && !builtInPlaceholders.has(span.name) && !unknownPlaceholders.has(span.name)) {
         unknownPlaceholders.add(span.name);
         issues.push(promptIssue(path, `Unknown placeholder "${span.name}" is not declared as a variable.`));
@@ -640,6 +685,14 @@ function validateTemplatePlaceholders(
       continue;
     }
 
+    if (span.kind === 'modelOpen') {
+      if (blockStack.some((block) => block.kind === 'model')) {
+        issues.push(promptIssue(path, 'Nested model blocks are not supported.'));
+      }
+      blockStack.push({ kind: 'model', raw: span.raw, role: span.role, placeholderCount: 0 });
+      continue;
+    }
+
     if (span.kind === 'optionClose') {
       if (blockStack.length === 0) {
         issues.push(promptIssue(path, 'Stray closing option block "{{/option}}".'));
@@ -673,6 +726,20 @@ function validateTemplatePlaceholders(
       if (openBlock.kind !== 'when') {
         issues.push(promptIssue(path, `Mismatched closing tag "{{/when}}" for "${openBlock.raw}".`));
       }
+      continue;
+    }
+
+    if (span.kind === 'modelClose') {
+      if (blockStack.length === 0) {
+        issues.push(promptIssue(path, 'Stray closing model block "{{/model}}".'));
+        continue;
+      }
+      const openBlock = blockStack.pop()!;
+      if (openBlock.kind !== 'model') {
+        issues.push(promptIssue(path, `Mismatched closing tag "{{/model}}" for "${openBlock.raw}".`));
+      } else if (openBlock.placeholderCount !== 1) {
+        issues.push(promptIssue(path, `Model block "${openBlock.raw}" must contain exactly one matching {{${openBlock.role}}} placeholder.`));
+      }
     }
   }
 
@@ -681,6 +748,8 @@ function validateTemplatePlaceholders(
       issues.push(promptIssue(path, `Unclosed option block "${openBlock.raw}".`));
     } else if (openBlock.kind === 'allOptionsDisabled') {
       issues.push(promptIssue(path, `Unclosed all-options-disabled block "${openBlock.raw}".`));
+    } else if (openBlock.kind === 'model') {
+      issues.push(promptIssue(path, `Unclosed model block "${openBlock.raw}".`));
     } else {
       issues.push(promptIssue(path, `Unclosed condition block "${openBlock.raw}".`));
     }
@@ -698,6 +767,11 @@ function validateTemplatePlaceholders(
       issues.push(promptIssue(path, 'The {{#allOptionsDisabled}} fallback block must not be empty.'));
     }
   }
+  for (const match of template.matchAll(/\{\{[ \t]*#model[ \t]+(model|rubberDuckModel)[ \t]*\}\}([\s\S]*?)\{\{[ \t]*\/model[ \t]*\}\}/g)) {
+    if (match[2].includes('\n') || match[2].includes('\r')) {
+      issues.push(promptIssue(path, `Model block "{{#model ${match[1]}}}" must stay on one line.`));
+    }
+  }
   return issues;
 }
 
@@ -709,6 +783,8 @@ type TemplateSpan =
   | { kind: 'allOptionsDisabledClose'; raw: string }
   | { kind: 'whenOpen'; conditions: ValueCondition[]; raw: string }
   | { kind: 'whenClose'; raw: string }
+  | { kind: 'modelOpen'; role: ModelRoleName; raw: string }
+  | { kind: 'modelClose'; raw: string }
   | { kind: 'invalid'; message: string };
 
 type ValueCondition = {
@@ -732,6 +808,7 @@ function extractTemplateSpans(template: string): TemplateSpan[] {
       const raw = template.slice(index, closeIndex + (hasExtraClosingBrace ? 3 : 2));
       const content = template.slice(index + 2, closeIndex).trim();
       const optionMatch = content.match(/^#option\s+([A-Za-z_][A-Za-z0-9_]*)$/);
+      const modelMatch = content.match(/^#model[ \t]+(model|rubberDuckModel)$/);
       const whenTokens = /^#when(?:\s|$)/.test(content)
         ? content.split(/\s+/).slice(1)
         : undefined;
@@ -756,6 +833,10 @@ function extractTemplateSpans(template: string): TemplateSpan[] {
         spans.push({ kind: 'whenOpen', conditions: whenConditions, raw });
       } else if (content === '/when') {
         spans.push({ kind: 'whenClose', raw });
+      } else if (modelMatch) {
+        spans.push({ kind: 'modelOpen', role: modelMatch[1] as ModelRoleName, raw });
+      } else if (content === '/model') {
+        spans.push({ kind: 'modelClose', raw });
       } else if (content.startsWith('#option') || content.startsWith('/option')) {
         spans.push({ kind: 'invalid', message: `Invalid option block syntax "${raw}". Use {{#option optionId}} and {{/option}}.` });
       } else if (content.startsWith('#allOptionsDisabled') || content.startsWith('/allOptionsDisabled')) {
@@ -765,6 +846,8 @@ function extractTemplateSpans(template: string): TemplateSpan[] {
           ? `Invalid condition block syntax "${raw}". Conditions must contain complete variable-choice pairs.`
           : `Invalid condition block syntax "${raw}". Use {{#when variableName choiceId [variableName choiceId ...]}} and {{/when}}.`;
         spans.push({ kind: 'invalid', message });
+      } else if (content.startsWith('#model') || content.startsWith('/model')) {
+        spans.push({ kind: 'invalid', message: `Invalid model block syntax "${raw}". Use {{#model model}} or {{#model rubberDuckModel}} and {{/model}}.` });
       } else if (variableNamePattern.test(content)) {
         spans.push({ kind: 'placeholder', name: content });
       } else {

@@ -115,7 +115,7 @@ Ground every claim in something you actually read. When you state how the system
 {{/when}}
 
 {{#option parallelAgents}}
-- Parallel agents: split the investigation into genuinely independent threads and give each one to a {{model}} agent with a standalone brief. Name the repository, exact scope, and expected report. Use parallel work for deep or independent threads, not simple lookups. Synthesize the results and report empty or contradictory threads plainly.
+- Parallel agents: split the investigation into genuinely independent threads and give each one to an agent{{#model model}} using {{model}}{{/model}} with a standalone brief. Name the repository, exact scope, and expected report. Use parallel work for deep or independent threads, not simple lookups. Synthesize the results and report empty or contradictory threads plainly.
 {{/option}}
 
 {{#when purpose general}}

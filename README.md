@@ -26,7 +26,7 @@ Prefer to build it yourself? See [Building the desktop app](#building-the-deskto
 
 ## Why Prompt Bank
 
-- Composable. Declare text inputs, dropdowns, ordered sliders, optional focus toggles, and model preset labels, and the composed text updates live as you fill them in.
+- Composable. Declare text inputs, dropdowns, ordered sliders, optional focus toggles, and optional model preset labels, and the composed text updates live as you fill them in.
 - Scope aware. Show, hide, or disable controls from other workflow choices, combine value conditions, and label model guidance by its prompt-specific role.
 - Structured. Prompts are Markdown with a small, checked schema, so a malformed prompt is caught before you rely on it.
 - Yours to keep. Plain files you can diff, grep, and commit next to the code they belong to. No account, no proprietary format, nothing to migrate later.
@@ -130,7 +130,7 @@ Write a short note about {{topic}}.
 
 The example prompts under `prompts/` are the built in set and a starting point. See the authoring guide in `docs/authoring.md` and the full contract in `schema.md`. Run `npm run validate` to check the built in set.
 
-Generic prompt selects and discrete sliders appear first as Workflow, followed by Focus areas, active Model guidance, free-form Context, and the raw template. In Model guidance, each role is the first model-field label rather than a separate card heading, while model context and reasoning are dropdowns. Authors can use `visible_when` to remove irrelevant controls, `enabled_when` to keep an unavailable option visible, compound `{{#when}}` conditions for coordinated choices, and `model_roles` to explain who a model label is intended for. Hidden paths are inactive during composition, and unavailable options are effectively off.
+Generic prompt selects and discrete sliders appear first as Workflow, followed by Focus areas, active Model guidance, free-form Context, and the raw template. In Model guidance, each role is the first model-field label rather than a separate card heading. Optional roles start at **No explicit model** and reveal Context and Reasoning only after a preset is selected. Authors can use `visible_when` to remove irrelevant controls, `enabled_when` to keep an unavailable option visible, compound `{{#when}}` conditions for coordinated choices, `{{#model}}` fragments to omit only model descriptors, and `model_roles` to explain who a model label is intended for. Hidden paths are inactive during composition, and unavailable options are effectively off.
 
 These fields only shape the text that is previewed and copied. Model roles and workflow wording are descriptive metadata, not execution or model-routing configuration.
 

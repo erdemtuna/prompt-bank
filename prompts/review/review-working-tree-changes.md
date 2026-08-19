@@ -31,7 +31,7 @@ Context:
 
 Start from the real diff, including new and deleted files. Untracked files count as part of the change.
 
-Use {{rubberDuckModel}} reviewers as a second opinion on anything you are not certain about. You wrote or guided most of this code, so weight their disagreement rather than defending the original choice.
+Use{{#model rubberDuckModel}} {{rubberDuckModel}}{{/model}} reviewers as a second opinion on anything you are not certain about. You wrote or guided most of this code, so weight their disagreement rather than defending the original choice.
 
 Look at these areas. If none is selected, do a brief general pass instead.
 

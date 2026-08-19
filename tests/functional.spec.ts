@@ -133,7 +133,7 @@ test('both model selectors insert the chosen preset labels', async ({ page }) =>
   await generalGroup.getByRole('combobox', { name: 'General model', exact: true }).selectOption('opus-5');
   await alternativeGroup.getByRole('combobox', { name: 'Alternative model', exact: true }).selectOption('gpt-5-6-sol');
   await expect(preview).toContainText(
-    'Use Opus 5 1M context medium reasoning as the primary reviewer, and a set of GPT-5.6 Sol 1M context medium reasoning reviewers as independent second opinions.'
+    'Perform the primary review using Opus 5 1M context medium reasoning, and use a set of reviewers using GPT-5.6 Sol 1M context medium reasoning as independent second opinions.'
   );
 });
 
@@ -142,18 +142,25 @@ test('context and reasoning selectors refine the composed model label', async ({
   const preview = page.getByRole('region', { name: 'Composed prompt' });
   const generalGroup = page.getByRole('group', { name: 'General model', exact: true });
 
+  await expect(generalGroup.getByRole('combobox', { name: 'General model', exact: true })).toHaveValue('');
+  await expect(preview).toContainText('Perform the primary review, and use a set of reviewers as independent second opinions.');
   await generalGroup.getByRole('combobox', { name: 'General model', exact: true }).selectOption('gpt-5-6-terra');
   await generalGroup.getByRole('combobox', { name: 'General model context', exact: true }).selectOption('1m');
   const reasoning = generalGroup.getByRole('combobox', { name: 'General model reasoning', exact: true });
   await expect(reasoning.locator('option')).toHaveText(['no', 'minimal', 'low', 'medium', 'high', 'extra high', 'max']);
   await reasoning.selectOption('max');
-  await expect(preview).toContainText('Use GPT-5.6 Terra 1M context max reasoning as the primary reviewer');
+  await expect(preview).toContainText('Perform the primary review using GPT-5.6 Terra 1M context max reasoning');
 
   await generalGroup.getByRole('combobox', { name: 'General model context', exact: true }).selectOption('standard');
-  await expect(preview).toContainText('Use GPT-5.6 Terra max reasoning as the primary reviewer');
+  await expect(preview).toContainText('Perform the primary review using GPT-5.6 Terra max reasoning');
 
   await reasoning.selectOption('none');
-  await expect(preview).toContainText('Use GPT-5.6 Terra no reasoning as the primary reviewer');
+  await expect(preview).toContainText('Perform the primary review using GPT-5.6 Terra no reasoning');
+
+  await generalGroup.getByRole('combobox', { name: 'General model', exact: true }).selectOption('');
+  await expect(generalGroup.getByRole('combobox', { name: 'General model context', exact: true })).toHaveCount(0);
+  await expect(generalGroup.getByRole('combobox', { name: 'General model reasoning', exact: true })).toHaveCount(0);
+  await expect(preview).toContainText('Perform the primary review, and use a set of reviewers as independent second opinions.');
 });
 
 test('command prompts copy a shell ready command', async ({ page }) => {
@@ -231,10 +238,21 @@ test.describe('Wave 1A composer fixture', () => {
     const executionModel = executionCard.getByRole('combobox', { name: 'Approved execution model', exact: true });
     const reviewModel = reviewCard.getByRole('combobox', { name: 'Planning and review model', exact: true });
 
-    await expect(executionCard.getByText('Used by approved implementation workers.')).toHaveCSS('clip', 'rect(0px, 0px, 0px, 0px)');
-    await expect(reviewCard.getByText('Used by reviewers that critique execution waves.')).toHaveCSS('clip', 'rect(0px, 0px, 0px, 0px)');
-    await expect(executionCard).toHaveAccessibleDescription('Used by approved implementation workers.');
-    await expect(reviewCard).toHaveAccessibleDescription('Used by reviewers that critique execution waves.');
+    const executionDescription = 'Used by approved implementation workers. Select No explicit model to leave model choice to Copilot CLI and emit no model descriptor.';
+    const reviewDescription = 'Used by reviewers that critique execution waves. Select No explicit model to leave model choice to Copilot CLI and emit no model descriptor.';
+    await expect(executionCard.getByText(executionDescription)).toHaveCSS('clip', 'rect(0px, 0px, 0px, 0px)');
+    await expect(reviewCard.getByText(reviewDescription)).toHaveCSS('clip', 'rect(0px, 0px, 0px, 0px)');
+    await expect(executionCard).toHaveAccessibleDescription(executionDescription);
+    await expect(reviewCard).toHaveAccessibleDescription(reviewDescription);
+
+    await expect(executionModel).toHaveValue('');
+    await expect(reviewModel).toHaveValue('');
+    await expect(executionModel.locator('option').first()).toHaveText('No explicit model');
+    await expect(reviewModel.locator('option').first()).toHaveText('No explicit model');
+    await expect(preview).toContainText('Handle approved implementation work.');
+    await expect(preview).toContainText('Review full-stack integration.');
+    await expect(executionCard.getByRole('combobox', { name: 'Approved execution model context', exact: true })).toHaveCount(0);
+    await expect(reviewCard.getByRole('combobox', { name: 'Planning and review model reasoning', exact: true })).toHaveCount(0);
 
     await executionModel.selectOption('opus-5');
     await reviewModel.selectOption('gpt-5-6-sol');
@@ -242,8 +260,8 @@ test.describe('Wave 1A composer fixture', () => {
     const reviewReasoning = reviewCard.getByRole('combobox', { name: 'Planning and review model reasoning', exact: true });
     await expect(reviewReasoning.locator('option')).toHaveText(['low', 'medium', 'high']);
     await reviewReasoning.selectOption('high');
-    await expect(preview).toContainText('Use Opus 5 medium reasoning for approved implementation work.');
-    await expect(preview).toContainText('Use GPT-5.6 Sol 1M context high reasoning to review full-stack integration.');
+    await expect(preview).toContainText('Handle approved implementation work using Opus 5 medium reasoning.');
+    await expect(preview).toContainText('Review full-stack integration using GPT-5.6 Sol 1M context high reasoning.');
 
     await page.getByLabel('Technical scope', { exact: true }).selectOption('backend');
     await expect(executionCard.getByRole('combobox', { name: 'Approved execution model', exact: true })).toHaveValue('opus-5');
@@ -254,7 +272,28 @@ test.describe('Wave 1A composer fixture', () => {
     await expect(page.getByRole('group', { name: 'Planning and review model', exact: true })
       .getByRole('combobox', { name: 'Planning and review model', exact: true })).toHaveValue('gpt-5-6-sol');
 
+    await executionModel.selectOption('');
+    await expect(preview).toContainText('Handle approved implementation work.');
+    await expect(preview).not.toContainText('Opus 5 medium reasoning');
+
     await page.getByLabel('Purpose', { exact: true }).selectOption('general');
     await expect(page.getByText('Model guidance', { exact: true })).toHaveCount(0);
+  });
+
+  test('injects a default only while an optional role becomes required', async ({ page }) => {
+    const preview = page.getByRole('region', { name: 'Composed prompt' });
+    const model = page.getByRole('group', { name: 'Approved execution model', exact: true })
+      .getByRole('combobox', { name: 'Approved execution model', exact: true });
+
+    await expect(model).toHaveValue('');
+    await page.getByLabel('Technical scope', { exact: true }).selectOption('backend');
+    await expect(model).toHaveValue('gpt-5-6-sol');
+    await expect(model.locator('option').first()).not.toHaveText('No explicit model');
+    await expect(preview).toContainText('Required backend model: GPT-5.6 Sol 1M context medium reasoning.');
+
+    await page.getByLabel('Technical scope', { exact: true }).selectOption('fullStack');
+    await expect(model).toHaveValue('');
+    await expect(model.locator('option').first()).toHaveText('No explicit model');
+    await expect(preview).not.toContainText('GPT-5.6 Sol 1M context medium reasoning');
   });
 });
