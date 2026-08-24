@@ -42,7 +42,7 @@ What I want to do with it:
 
 Read the code before describing it. Do not infer behavior from names alone, because a function called validate may not validate. Where the code contradicts its own naming or comments, point that out: that gap is usually the most useful thing you can tell me.
 
-Start with the shape of it in a few sentences, then go deeper.
+Start with the governing mental model in a few sentences and the implication for changing this area safely. Then cover the relevant entry points, mechanism and data flow, gotchas, and change map. Use informative headings, connected prose for causality, and file or symbol evidence next to each specific claim.
 
 {{#option entryPoints}}
 - Entry points: where execution starts and how it reaches this code. Include the non obvious callers, such as event handlers, scheduled work, and anything wired up dynamically.
@@ -60,4 +60,4 @@ Start with the shape of it in a few sentences, then go deeper.
 - Cover what this code does, how it fits the rest of the system, and what to be careful about.
 {{/allOptionsDisabled}}
 
-Cite the file and symbol for anything specific you claim. Say clearly which parts you verified and which parts are your best reading. Finish with the one thing most likely to trip me up.
+Cite the file and symbol for anything specific you claim. Distinguish verified behavior, inference, assumptions, and uncertainty without mechanically labelling every sentence. Finish with the unresolved fact or verified gotcha most likely to invalidate a change, not a second summary.

@@ -61,6 +61,6 @@ Separate the root cause from the symptom, and from the place the error surfaced.
 - Report the cause and the minimal change that would remove it.
 {{/allOptionsDisabled}}
 
-Report the root cause, the evidence, the blast radius, and the minimal fix. If more than one cause is plausible, rank them and say what would distinguish them.
+Once the evidence establishes a cause, lead the report with the diagnosis and confidence. Then explain the mechanism, proof, blast radius, credible alternatives and what would distinguish them, and the minimal safe fix. Keep observed evidence, inference, and uncertainty distinct, with file or symbol evidence beside the claim it supports. Do not narrate the investigation chronologically or add a second summary.
 
 Do not apply the fix until I confirm the diagnosis.

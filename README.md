@@ -6,7 +6,7 @@ A prompt you rely on tends to exist in a dozen slightly different forms: copies 
 
 Prompt Bank keeps the canonical version in a Markdown file and declares the parts that change as inputs, dropdowns, sliders, and optional sections. The app turns that file into a form: choose the workflow, set the intensity, toggle additive sections, watch the composed text update, then paste it into whichever AI tool you already use.
 
-![Prompt Bank composing a technical investigation with workflow, diagram, optional model, and context controls.](docs/screenshot-v060-investigate.png)
+![Prompt Bank composing a technical investigation with answer-first guidance, semi-formal diagrams, optional model, and context controls.](docs/screenshot-v061-investigate.png)
 
 Because prompts are plain files, they stay yours. You can diff them, grep them, and commit them alongside the project they belong to, with no account and nothing to export if you walk away. Keep a personal set in `~/.prompt-bank/`, and a project specific set in any folder you open. Prompt Bank composes the text and hands it to your clipboard; it does not call a model or send your prompts anywhere.
 
@@ -28,7 +28,7 @@ Prefer to build it yourself? See [Building the desktop app](#building-the-deskto
 
 - Composable. Declare text inputs, dropdowns, ordered sliders, optional focus toggles, and optional model preset labels, and the composed text updates live as you fill them in.
 - Scope aware. Show, hide, or disable controls from other workflow choices, combine value conditions, and label model guidance by its prompt-specific role.
-- Structured. Prompts are Markdown with a small, checked schema, so a malformed prompt is caught before you rely on it.
+- Structured. Prompts are Markdown with a small, checked schema that catches malformed composition, while the built-ins provide explicit answer-first output contracts.
 - Yours to keep. Plain files you can diff, grep, and commit next to the code they belong to. No account, no proprietary format, nothing to migrate later.
 - Together in one place. A personal global set and any project folder you open appear alongside the built in prompts, each with a source label.
 - Local. Everything happens on your machine. Prompt Bank renders text and copies it; it never executes a prompt, calls a model, or runs a workflow.
@@ -42,7 +42,7 @@ Twelve prompts ship with the app. They are meant to be useful on their own and t
 | Review a Pull Request | review | Multi-perspective review returning findings with evidence, severity, and a fix |
 | Review Working Tree Changes | review | Check your own uncommitted work before it becomes a commit |
 | Implementation Plan | planning | Turn an agreed goal into ordered waves with review gates |
-| Investigate a Topic | exploration | Explore an area or a question before deciding what to build |
+| Investigate a Topic | exploration | Explore an area or question with purpose-specific openings and optional semi-formal diagrams |
 | Find the Root Cause | debugging | Trace a bug to its actual cause, with a regression test |
 | Explain a Codebase Area | code | Understand unfamiliar code well enough to change it safely |
 | Refactor Code | code | Restructure toward an outcome while behavior stays identical |
@@ -129,6 +129,8 @@ Write a short note about {{topic}}.
 ```
 
 The example prompts under `prompts/` are the built in set and a starting point. See the authoring guide in `docs/authoring.md` and the full contract in `schema.md`. Run `npm run validate` to check the built in set.
+
+The analytical built-ins lead with the result, recommendation, or decision implication and keep evidence next to claims. Technical investigations use a conservative C4/UML-style notation for selected diagrams, including a **Data flow and trust boundaries** view for evidence-backed movement across producers, consumers, transformations, stores, and boundaries.
 
 Generic prompt selects and discrete sliders appear first as Workflow, followed by Focus areas, active Model guidance, free-form Context, and the raw template. In Model guidance, each role is the first model-field label rather than a separate card heading. Optional roles start at **No explicit model** and reveal Context and Reasoning only after a preset is selected. Authors can use `visible_when` to remove irrelevant controls, `enabled_when` to keep an unavailable option visible, compound `{{#when}}` conditions for coordinated choices, `{{#model}}` fragments to omit only model descriptors, and `model_roles` to explain who a model label is intended for. Hidden paths are inactive during composition, and unavailable options are effectively off.
 

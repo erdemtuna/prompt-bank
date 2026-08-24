@@ -45,6 +45,8 @@ Compare them against the criteria, not against a generic list of virtues. Where 
 
 Be concrete about where each one breaks down. Every approach has a case it handles badly; if you cannot name that case for an option, you have not understood it yet.
 
+Lead with the recommendation and the decisive criterion. Follow with only the evidence and tradeoffs needed to support that decision. Compare every approach across the same dimensions; use a table only when repeated multidimensional comparison is easier to scan than prose. Put evidence next to each claim and distinguish verified facts, inference, assumptions, and material uncertainty.
+
 {{#option reversibility}}
 - Reversibility: what it costs to back out of each choice in six months. Separate the ones that are a config change from the ones that need a migration or a rewrite. A cheap mistake and an expensive mistake do not deserve the same caution.
 {{/option}}
@@ -61,6 +63,6 @@ Be concrete about where each one breaks down. Every approach has a case it handl
 - Compare them on the stated criteria, and cover tradeoffs and risk.
 {{/allOptionsDisabled}}
 
-End with one recommendation, not a summary of both sides. Then state the specific conditions under which the other choice would be right, so I can tell whether those conditions apply to me.
+Do not end with a second summary. State the specific conditions that would reverse the recommendation, followed by the most decision-relevant uncertainty and confidence in the recommendation.
 
 If the decision genuinely does not matter, say so and tell me to pick either and move on.

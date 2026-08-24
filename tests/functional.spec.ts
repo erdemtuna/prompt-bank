@@ -111,6 +111,7 @@ test('slider controls select one ordered investigation-depth branch', async ({ p
   const preview = page.getByRole('region', { name: 'Composed prompt' });
   const depth = page.getByRole('slider', { name: 'Analysis depth' });
 
+  await expect(page.getByRole('checkbox', { name: 'Data flow and trust boundaries' })).toBeVisible();
   await expect(depth).toHaveAttribute('aria-valuetext', 'Focused');
   await expect(preview).toContainText('trace the relevant implementation paths');
 

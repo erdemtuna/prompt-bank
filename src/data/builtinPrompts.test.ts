@@ -43,12 +43,18 @@ const technicalArtifacts = [
   },
   {
     id: 'apiDataFlowDiagram',
-    label: 'API/data-flow diagram',
-    marker: 'API/data-flow diagram:',
+    label: 'Data flow and trust boundaries',
+    marker: 'Data flow and trust boundaries:',
     scopes: technicalScopes
   }
 ] as const;
 const coherenceMarker = 'Technical-design coherence:';
+const notationMarker = 'Diagram house rules:';
+const purposeOpenings = {
+  general: 'Opening — executive summary:',
+  brainstorm: 'Opening — option map:',
+  technicalDesign: 'Opening — decision brief:'
+} as const;
 
 function builtinPrompt(id: string): Prompt {
   const prompt = appData.prompts.find((candidate) => candidate.id === id);
@@ -80,6 +86,84 @@ function occurrenceCount(text: string, marker: string): number {
 }
 
 describe('Wave 2B built-in prompts', () => {
+  it('retains the investigation controls, defaults, option ids, and applicability matrix', () => {
+    const prompt = builtinPrompt('investigate-a-topic');
+
+    expect(prompt.variables.map((variable) => ({
+      name: variable.name,
+      control: variable.control,
+      defaultValue: variable.defaultValue,
+      choices: variable.choices?.map((choice) => [choice.id, choice.label]),
+      visibleWhen: variable.visibleWhen
+    }))).toEqual([
+      {
+        name: 'purpose',
+        control: 'select',
+        defaultValue: 'technicalDesign',
+        choices: [
+          ['general', 'General analysis'],
+          ['brainstorm', 'Brainstorm'],
+          ['technicalDesign', 'Technical design']
+        ],
+        visibleWhen: undefined
+      },
+      {
+        name: 'technicalScope',
+        control: 'select',
+        defaultValue: 'infer',
+        choices: [
+          ['infer', 'Infer'],
+          ['frontend', 'Frontend'],
+          ['backend', 'Backend'],
+          ['fullStack', 'Full-stack']
+        ],
+        visibleWhen: { purpose: ['technicalDesign'] }
+      },
+      {
+        name: 'analysisDepth',
+        control: 'slider',
+        defaultValue: 'focused',
+        choices: [
+          ['brief', 'Brief'],
+          ['focused', 'Focused'],
+          ['deep', 'Deep']
+        ],
+        visibleWhen: undefined
+      },
+      {
+        name: 'intent',
+        control: undefined,
+        defaultValue: 'Use the current conversation, prior analysis, and repository state.',
+        choices: undefined,
+        visibleWhen: undefined
+      }
+    ]);
+    expect(prompt.options.map((option) => ({
+      id: option.id,
+      label: option.label,
+      defaultEnabled: option.defaultEnabled,
+      visibleWhen: option.visibleWhen,
+      enabledWhen: option.enabledWhen
+    }))).toEqual([
+      {
+        id: 'parallelAgents',
+        label: 'Parallel agents',
+        defaultEnabled: true,
+        visibleWhen: undefined,
+        enabledWhen: undefined
+      },
+      ...technicalArtifacts.map((artifact) => ({
+        id: artifact.id,
+        label: artifact.label,
+        defaultEnabled: false,
+        visibleWhen: { purpose: ['technicalDesign'] },
+        enabledWhen: artifact.id === 'uiMockups'
+          ? { technicalScope: ['frontend', 'fullStack'] }
+          : undefined
+      }))
+    ]);
+  });
+
   it('keeps non-technical investigation purposes free of scope and artifact output', () => {
     const prompt = builtinPrompt('investigate-a-topic');
     const allOptionsEnabled = Object.fromEntries(prompt.options.map((option) => [option.id, true]));
@@ -101,11 +185,51 @@ describe('Wave 2B built-in prompts', () => {
 
         expect(result.canCopy).toBe(true);
         expect(result.text).not.toMatch(/Design scope —|Design outcome:|Technical-design coherence:|\barchitecture\b/i);
+        expect(result.text).not.toContain(notationMarker);
         for (const artifact of technicalArtifacts) {
           expect(result.text).not.toContain(artifact.marker);
         }
       }
     }
+  });
+
+  it('uses exactly one purpose-specific opening without leaking other readability tiers', () => {
+    const prompt = builtinPrompt('investigate-a-topic');
+
+    for (const purpose of Object.keys(purposeOpenings) as Array<keyof typeof purposeOpenings>) {
+      const result = compose(prompt, { purpose, technicalScope: 'fullStack' }, selectOptions(prompt));
+
+      expect(occurrenceCount(result.text, purposeOpenings[purpose])).toBe(1);
+      for (const [otherPurpose, marker] of Object.entries(purposeOpenings)) {
+        expect(result.text.includes(marker)).toBe(otherPurpose === purpose);
+      }
+      expect(result.text).toContain('Lead with the result, recommendation, or decision implication.');
+    }
+  });
+
+  it('applies the canonical notation once for technical design and only artifact-specific grammar when selected', () => {
+    const prompt = builtinPrompt('investigate-a-topic');
+    const noArtifacts = compose(
+      prompt,
+      { purpose: 'technicalDesign', technicalScope: 'fullStack' },
+      selectOptions(prompt)
+    );
+    const dataFlow = compose(
+      prompt,
+      { purpose: 'technicalDesign', technicalScope: 'fullStack' },
+      selectOptions(prompt, 'apiDataFlowDiagram')
+    );
+
+    expect(occurrenceCount(noArtifacts.text, notationMarker)).toBe(1);
+    expect(noArtifacts.text).toContain('8–12 primary elements as a preferred overview range');
+    expect(noArtifacts.text).toContain('split above 15 unless that would break one coherent scenario');
+    expect(noArtifacts.text).toContain('Put missing facts in an adjacent `Unresolved` list outside the diagram');
+    expect(noArtifacts.text).toContain('Dashed relationships remain reserved for asynchronous flow and never mean uncertainty');
+    expect(noArtifacts.text).not.toContain('Data flow and trust boundaries:');
+    expect(occurrenceCount(dataFlow.text, notationMarker)).toBe(1);
+    expect(dataFlow.text).toContain('rectangles carrying `Producer`, `Consumer`, or `Transform` type text');
+    expect(dataFlow.text).toContain('Use `-->` for synchronous data movement and `-.->` for asynchronous movement');
+    expect(dataFlow.text).not.toContain('Sequence diagram:');
   });
 
   it('applies the locked technical artifact taxonomy only to available scopes', () => {
@@ -167,17 +291,20 @@ describe('Wave 2B built-in prompts', () => {
       selectOptions(prompt, 'systemArchitecture', 'sequenceDiagram', 'activityWorkflowDiagram', 'apiDataFlowDiagram')
     );
 
-    expect(result.text).toContain('static structural view of the major components, modules, or services');
-    expect(result.text).toContain('responsibilities, boundaries, and static dependencies');
-    expect(result.text).toContain('Do not use this view for runtime message order or data payload movement.');
-    expect(result.text).toContain('for a greenfield system, show only the proposed architecture and do not invent an existing baseline.');
-    expect(result.text).toContain('Sequence diagram: include a diagram showing participant ownership, runtime message order');
-    expect(result.text).toContain('Activity/workflow diagram: include a diagram showing actors, process steps, decisions, branches');
-    expect(result.text).toContain('Use it for process and decision flow, not runtime message order or timing.');
-    expect(result.text).toContain('API/data-flow diagram: include a diagram showing contracts, trust boundaries, transformations, storage, and movement of data.');
+    expect(result.text).toContain('use conservative Mermaid flowchart syntax with C4 Container semantics');
+    expect(result.text).toContain('stadium nodes for human actors');
+    expect(result.text).toContain('rectangles for deployable containers or services');
+    expect(result.text).toContain('Use a separate Component zoom only when one container needs decomposition');
+    expect(result.text).toContain('do not mix levels or use this view for runtime order or payload movement');
+    expect(result.text).toContain('For a greenfield system show only proposed `[Added]` elements');
+    expect(result.text).toContain('Sequence diagram: use Mermaid sequence syntax for one scenario');
+    expect(result.text).toContain('Use `->>` for synchronous calls, `-)` for asynchronous sends, and `-->>` for returns.');
+    expect(result.text).toContain('Activity/workflow diagram: use Mermaid flowchart syntax with activity semantics');
+    expect(result.text).toContain('do not use this view for runtime message order or timing.');
+    expect(result.text).toContain('Data flow and trust boundaries: use Mermaid flowchart syntax');
     expect(occurrenceCount(result.text, coherenceMarker)).toBe(1);
-    expect(result.text).toContain('use its component names and boundaries as the shared vocabulary');
-    expect(result.text).toContain('each artifact must add a viewpoint the others do not');
+    expect(result.text).toContain('use its container names and boundaries as the shared vocabulary');
+    expect(result.text).toContain('each artifact must answer a different question');
   });
 
   it('keeps the effective investigation matrix below the unchanged safety limit', () => {
@@ -223,10 +350,64 @@ describe('Wave 2B built-in prompts', () => {
       expect(result.canCopy).toBe(true);
       expect(result.text).toContain(expected);
       expect(result.text).toContain('Do not recreate a rigorous technical-design report.');
+      expect(result.text).toContain('Plan at a Glance');
+      expect(result.text.indexOf('Execution map')).toBeLessThan(result.text.indexOf('ordered waves'));
+      expect(result.text).toContain('outcome, scope, ownership, dependencies, implementation work, validation evidence, review gate, and completion contract');
       expect(result.text).not.toContain(modelValues.model);
       for (const other of Object.values(expectedScopeText).filter((value) => value !== expected)) {
         expect(result.text).not.toContain(other);
       }
+    }
+  });
+
+  it('locks answer-first semantics and safety gates across the updated neutral built-ins', () => {
+    const expectedMarkers = {
+      'review-a-pull-request': [
+        'Lead with a compact merge-readiness block:',
+        'exactly one specific claim',
+        'Do not reproduce reviewer reports',
+        'Do not push commits or change the pull request unless I explicitly ask.'
+      ],
+      'review-working-tree-changes': [
+        'Lead with a compact commit-readiness block:',
+        'exactly one specific claim',
+        'Do not reproduce reviewer reports',
+        'Do not fix anything yet.'
+      ],
+      'implementation-plan': [
+        'Plan at a Glance',
+        'Execution map',
+        'stable internal sequence',
+        'Do not start implementing until the plan is approved.'
+      ],
+      'compare-approaches': [
+        'Lead with the recommendation and the decisive criterion.',
+        'conditions that would reverse the recommendation',
+        'material uncertainty'
+      ],
+      'summarize-a-source': [
+        'Treat `Length` as the budget for the entire response',
+        "Keep the source's claims separate from implications or other inference",
+        'Do not add a second summary.'
+      ],
+      'explain-a-codebase-area': [
+        'Start with the governing mental model',
+        'implication for changing this area safely',
+        'file or symbol evidence next to each specific claim'
+      ],
+      'find-the-root-cause': [
+        'lead the report with the diagnosis and confidence',
+        'mechanism, proof, blast radius, credible alternatives',
+        'Do not apply the fix until I confirm the diagnosis.'
+      ]
+    } as const;
+
+    for (const [id, markers] of Object.entries(expectedMarkers)) {
+      const template = builtinPrompt(id).template;
+      for (const marker of markers) {
+        expect(template, `${id} should retain "${marker}"`).toContain(marker);
+      }
+      expect(template).not.toMatch(/\bPersonal Assistant\b/i);
     }
   });
 

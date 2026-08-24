@@ -79,11 +79,11 @@ Constraints:
 
 Create and critique the plan in this session. Use native planning or review agents only where they genuinely improve the plan. The execution target below applies to implementation after approval, not to creation of the plan. Do not launch implementation work while planning.
 
-Break the work into ordered waves rather than a flat list of steps. A wave is a group of changes that can be built and verified together. Each wave must state what it changes, which files it touches, what proves it worked, and what the next wave is allowed to assume.
+Begin with **Plan at a Glance**: the goal, recommended execution shape, critical dependency chain, parallel workstreams, highest-risk assumption, and overall completion proof. Follow it with an **Execution map** that shows ownership, dependency order, parallelization, worktrees where applicable, and merge or handoff points before any detailed wave.
+
+Break the work into ordered waves rather than a flat list of steps. Give each wave an informative heading that states the outcome it unlocks. Keep every wave standalone and use this stable internal sequence: outcome, scope, ownership, dependencies, implementation work, validation evidence, review gate, and completion contract. State the repository, branch, exact files in scope, what proves the wave worked, what to report back, and what the next wave is allowed to assume.
 
 Put a coordinator-owned review gate at the end of every wave. At each gate, use native{{#model rubberDuckModel}} {{rubberDuckModel}}{{/model}} reviewers to check the wave against its own success criteria before the next wave starts, and fix what they find before moving on. The point of the gate is to catch a wrong assumption while it is still one wave deep instead of letting it propagate.
-
-Write each wave so it stands alone: name the repository, the branch, the exact scope, the files in scope, and what to report back, because whoever picks up a wave may have none of this conversation.
 
 Reuse prior analysis and any existing mockups or diagrams. Do not recreate a rigorous technical-design report. When an implementation-critical artifact is missing, assign its creation or validation to the wave that first needs it.
 
@@ -131,8 +131,8 @@ Reuse prior analysis and any existing mockups or diagrams. Do not recreate a rig
 
 Before you present the plan, have{{#model rubberDuckModel}} {{rubberDuckModel}}{{/model}} agents critique it from different angles and fold in what holds up.
 
-Then surface every open question and uncertain assumption with enough context for a decision. Do not bury them in a list at the end. Resolve answered questions into the plan itself.
+Keep each open question or uncertain assumption beside the wave or decision it affects, with enough context to resolve it. Do not bury questions in a list at the end. Resolve answered questions into the plan itself.
 
-Present the final plan with the wave breakdown, the review gates, the success criteria for each wave, and the success criteria for the whole change.
+Present the final plan in this order: Plan at a Glance, execution map, and detailed waves. Put detailed success criteria and proof inside the waves; do not repeat the overall completion proof from Plan at a Glance or add a second summary.
 
 Do not start implementing until the plan is approved.

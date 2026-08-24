@@ -44,6 +44,8 @@ Represent the source accurately. Keep the key facts, names, and numbers, and kee
 
 If the source is unclear, self contradictory, or does not actually support its own headline, say so plainly rather than tidying it into something coherent.
 
+Lead with a faithful summary. Treat `Length` as the budget for the entire response, including selected optional sections. Compress optional sections to fit rather than expanding a short summary into a report; if they cannot fit without distorting the source, state the conflict and ask for a larger budget. Keep the source's claims separate from implications or other inference, and prefer connected prose unless the content is genuinely easier to understand as discrete points.
+
 {{#option keyPoints}}
 - Key points: the handful of points that actually carry the argument, in the order that makes them easiest to follow. Not every point, just the load bearing ones.
 {{/option}}
@@ -60,4 +62,4 @@ If the source is unclear, self contradictory, or does not actually support its o
 - Give a faithful summary at the requested length, and nothing else.
 {{/allOptionsDisabled}}
 
-Lead with the summary. Note anything important you could not read or verify.
+Note anything important you could not read or verify. Do not add a second summary.

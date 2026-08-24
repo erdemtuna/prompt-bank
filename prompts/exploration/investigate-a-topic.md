@@ -90,8 +90,8 @@ options:
     visible_when:
       purpose: [technicalDesign]
   - id: apiDataFlowDiagram
-    label: API/data-flow diagram
-    description: Show contracts and movement of data across boundaries.
+    label: Data flow and trust boundaries
+    description: Show evidence-backed data movement, transformations, stores, and trust boundaries.
     default: false
     visible_when:
       purpose: [technicalDesign]
@@ -103,6 +103,8 @@ Intent:
 {{intent}}
 
 Ground every claim in something you actually read. When you state how the system behaves, cite the file and symbol you are reading it from. When you cannot verify something, say so instead of filling the gap with a plausible guess. A confident wrong answer here is worse than an admitted unknown.
+
+Lead with the result, recommendation, or decision implication. Put evidence next to the claim it supports, distinguish material uncertainty from established facts, and use informative headings that state a conclusion, precise question, or reader task. Use connected prose for mechanisms and reasoning, tables only for repeated multidimensional comparison, numbered lists only when order matters, and bullets only for genuinely discrete items. Omit empty sections, duplicated summaries, chronological research narration, and source dumps.
 
 {{#when analysisDepth brief}}
 - Depth: inspect the minimum evidence needed to answer confidently, keep the result concise, and avoid expanding into adjacent questions.
@@ -119,10 +121,10 @@ Ground every claim in something you actually read. When you state how the system
 {{/option}}
 
 {{#when purpose general}}
-- Purpose: report what you found, what it means, and the strongest next step without forcing the result into brainstorming or a build design.
+- Opening — executive summary: begin with scope, principal findings, conclusion, strongest next step, and any material limitation. This is the only opening summary. Then report only the evidence, mechanism, alternatives, and implications needed to support it, without forcing the result into brainstorming or a build design.
 {{/when}}
 {{#when purpose brainstorm}}
-- Brainstorm: map the option space, including non-obvious directions. Keep promising paths open rather than narrowing to one. For each, give the tradeoff that actually decides it. Close with a short pursue, park, or drop decision set.
+- Opening — option map: begin with the promising directions, decisive tradeoffs, and current pursue, park, or drop outcomes. Do not force one recommendation. Then develop the evidence, mechanisms, alternatives, and implications needed to test that map, including non-obvious directions.
 {{/when}}
 {{#when purpose technicalDesign technicalScope infer}}
 - Design scope — infer: determine the affected technical surface from inspected evidence. State the inferred boundaries, ownership, and assumptions in prose.
@@ -136,32 +138,37 @@ Ground every claim in something you actually read. When you state how the system
 {{#when purpose technicalDesign technicalScope fullStack}}
 - Design scope — full-stack: cover clients and backend components, contract ownership, state ownership, end-to-end boundaries, failure handling, and delivery sequencing.
 {{/when}}
+{{#when purpose technicalDesign}}
+- Opening — decision brief: begin with the decision required, recommended direction, criteria, alternatives, decisive tradeoff, risks, confidence, and whether to proceed, narrow, defer, or stop. This is the only opening summary.
+- Diagram house rules: when one or more diagram artifacts is selected, state the single question each diagram answers, keep one grammar and abstraction level, and use only evidence-backed elements and relationships. Put missing facts in an adjacent `Unresolved` list outside the diagram. Treat 8–12 primary elements as a preferred overview range, never a minimum; split above 15 unless that would break one coherent scenario. Use one dominant reading direction, render and inspect the result, and simplify and rerender when labels, crossings, clipping, density, direction, or text readability are weak.
+- Diagram legend: keep element kind, change status, and epistemic status separate. Mark change status in text as `[Existing]`, `[Added]`, `[Changed]`, or `[Removed]`; use neutral gray, blue, amber, and pale gray only as redundant visual reinforcement. Append `[Uncertain]` and use a dashed element border for unverified elements. Dashed relationships remain reserved for asynchronous flow and never mean uncertainty. Avoid decorative icons, gradients, shadows, and unlabeled color. Use one shared legend when notation is unchanged.
+{{/when}}
 
 {{#option systemArchitecture}}
-- System architecture: include a static structural view of the major components, modules, or services, their responsibilities, boundaries, and static dependencies. Emphasize who owns or depends on whom. Do not use this view for runtime message order or data payload movement. Decompose a component further only where a boundary materially affects the design. If the design changes an existing system, distinguish added, changed, and removed parts; for a greenfield system, show only the proposed architecture and do not invent an existing baseline.
+- System architecture: use conservative Mermaid flowchart syntax with C4 Container semantics, not Mermaid's experimental C4 grammar. Use stadium nodes for human actors, rounded rectangles for external systems, rectangles for deployable containers or services, cylinders for persistent stores, and labelled subgraphs for system, ownership, or trust boundaries. Use `-->` for synchronous interactions and `-.->` for asynchronous messages; every relationship must be directed and use a verb phrase that reads source-to-target. Show each container's type and one-line responsibility. Use a separate Component zoom only when one container needs decomposition; do not mix levels or use this view for runtime order or payload movement. For a greenfield system show only proposed `[Added]` elements; otherwise use the canonical change statuses.
 {{/option}}
 {{#option uiMockups}}
 - UI mockups: include low-fidelity mockups for the important default, loading, empty, error, and narrow-width states. Keep them tied to the proposed interaction rather than visual polish.
 {{/option}}
 {{#option stateDiagram}}
-- State diagram: include a diagram of meaningful states, transitions, guards, and failure or recovery paths.
+- State diagram: use Mermaid state syntax with states, initial and final markers, and transitions labelled `event [guard] / action` where those parts exist. Include meaningful failure and recovery paths.
 {{/option}}
 {{#option sequenceDiagram}}
-- Sequence diagram: include a diagram showing participant ownership, runtime message order, asynchronous boundaries, timing where relevant, and failure responses.
+- Sequence diagram: use Mermaid sequence syntax for one scenario, with participants or lifelines and ordered messages. Use `->>` for synchronous calls, `-)` for asynchronous sends, and `-->>` for returns. Label every call, send, return, failure, and timeout with concise semantics.
 {{/option}}
 {{#option activityWorkflowDiagram}}
-- Activity/workflow diagram: include a diagram showing actors, process steps, decisions, branches, alternate paths, and completion conditions. Use it for process and decision flow, not runtime message order or timing.
+- Activity/workflow diagram: use Mermaid flowchart syntax with activity semantics: start and end, action nodes, decision or merge diamonds, and labelled branch conditions. Unlabelled control edges are allowed only when the next action is unambiguous. Include alternate paths and completion conditions; do not use this view for runtime message order or timing.
 {{/option}}
 {{#option apiDataFlowDiagram}}
-- API/data-flow diagram: include a diagram showing contracts, trust boundaries, transformations, storage, and movement of data.
+- Data flow and trust boundaries: use Mermaid flowchart syntax with rectangles carrying `Producer`, `Consumer`, or `Transform` type text; cylinders for persistent stores; rounded rectangles for external systems; and labelled subgraphs for trust boundaries. Use `-->` for synchronous data movement and `-.->` for asynchronous movement. Label every movement with the data, source-to-target action, and API, protocol, authentication, or mode when relevant.
 {{/option}}
 {{#allOptionsDisabled}}
 - Optional focus: work directly in the current session and return the requested result without additional optional sections.
 {{/allOptionsDisabled}}
 
 {{#when purpose technicalDesign}}
-- Technical-design coherence: when multiple artifacts are included, keep component and participant names, boundaries, and granularity consistent. If a System architecture diagram is included, use its component names and boundaries as the shared vocabulary. Do not repeat the same information across diagrams; each artifact must add a viewpoint the others do not.
-- Design outcome: explain how the strongest direction fits the existing system, what it would take to build, and whether to proceed, narrow the scope, or stop.
+- Technical-design coherence: when multiple artifacts are included, keep container, participant, state, activity, data entity, and boundary names consistent. If a System architecture diagram is included, use its container names and boundaries as the shared vocabulary for sequence, state, activity, and data-flow views. Do not repeat the same information across diagrams; each artifact must answer a different question.
+- Design implications: after the supporting analysis, explain what the opening recommendation would require to build, which existing boundaries it changes, and what evidence or condition would reverse it. Do not restate the decision brief.
 {{/when}}
 
 Be clear about three separate things: what you found, what you infer from it, and what you recommend. Do not blur them together.

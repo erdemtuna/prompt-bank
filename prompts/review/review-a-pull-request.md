@@ -57,14 +57,10 @@ Review from these perspectives. If none is selected, do a general readiness pass
 - General readiness: correctness, clarity, tests, and anything that would block a merge.
 {{/allOptionsDisabled}}
 
-Report every material finding with all five of these:
+Lead with a compact merge-readiness block: recommendation, blocker count, highest risk, evidence confidence, and the single largest uncertainty. Put blockers before non-blocking findings.
 
-1. What you found, stated as a specific claim.
-2. Where it is, as a file path and line or symbol.
-3. Why it matters, in terms of user or operator impact.
-4. Severity: blocker, should fix, or nit.
-5. A concrete recommended fix.
+Group material findings by severity. Give each finding exactly one specific claim, then its file path and line or symbol, verified evidence, user or operator impact, severity, concrete recommended fix, and any uncertainty. Keep evidence adjacent to the claim instead of collecting citations elsewhere.
 
-Group the findings by severity, blockers first. Do not pad the review: if a perspective turned up nothing, say so in one line. Close with a clear merge recommendation and the single thing you are least sure about.
+Do not reproduce reviewer reports, narrate the investigation order, or create repeated empty sections for perspectives with no findings. Reconcile useful evidence into one review; when reviewers materially disagree, state the disagreement where it affects a finding or the readiness recommendation.
 
 Do not push commits or change the pull request unless I explicitly ask.

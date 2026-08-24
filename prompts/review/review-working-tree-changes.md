@@ -51,6 +51,8 @@ Look at these areas. If none is selected, do a brief general pass instead.
 - General pass: correctness, clarity, and anything that should not be committed as is.
 {{/allOptionsDisabled}}
 
-Separate blockers from non blocking improvements. For each finding, give the file and line, the evidence you are relying on, and the fix. Point out any assumption you made that you could not verify from the code.
+Lead with a compact commit-readiness block: ready or not ready to keep, reviewed scope, blocker count, highest risk, validation gaps, and the single largest uncertainty. Put blockers before non-blocking improvements.
+
+Group material findings by severity. Give each finding exactly one specific claim, then its file path and line or symbol, verified evidence, impact, severity, concrete recommended fix, and any uncertainty. Keep evidence adjacent to the claim. Do not reproduce reviewer reports, narrate the investigation order, or create repeated empty sections for focus areas with no findings. Reconcile useful evidence into one review and state only material disagreement.
 
 Do not fix anything yet. Report first, and wait for me to choose what to address.
