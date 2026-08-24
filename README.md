@@ -175,7 +175,8 @@ The pure Rust core is tested in CI with `cargo test -p prompt-bank-core`. A nati
 
 Installers for all three desktop operating systems are built automatically by the `Release` GitHub Actions workflow, which runs `tauri-apps/tauri-action` on macOS, Windows, and Linux runners.
 
-- To cut a release, bump `package.json`, which is also the Tauri application version source, and push a matching version tag, for example `git tag v0.5.4 && git push origin v0.5.4`. Keep the desktop crate version and lockfile entry in sync. The workflow creates one release, has every platform job upload its installer to that same release, and then publishes it as the latest release only after all builds succeed. macOS is built for both Apple Silicon and Intel.
+- To cut a release, follow the [release-note and preparation guide](docs/releases/README.md). From a clean, synchronized `main`, run `npm run release:prepare -- X.Y.Z`; it updates every version source and generates the versioned release notes without committing or tagging. Inspect the ordinary preparation diff, run the printed checks, and obtain the normal explicit commit and release approval before committing and tagging the exact result.
+- A pushed version tag starts the automatic release flow. The workflow validates the committed versions and release-note body, builds every platform installer into a draft, and publishes it only after validation and all builds succeed. macOS is built for both Apple Silicon and Intel.
 - To produce installers without a release, run the workflow manually from the Actions tab (`workflow_dispatch`). The bundles are uploaded as downloadable workflow artifacts.
 
 The produced bundles are the Windows `.exe` (NSIS) and `.msi`, the macOS `.app` and `.dmg`, and the Linux `.AppImage` and `.deb`. They are unsigned for now, so macOS Gatekeeper and Windows SmartScreen may warn on first open; signing is a later step.

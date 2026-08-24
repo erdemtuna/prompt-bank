@@ -10,8 +10,60 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  validate-release:
+    name: Validate the committed release
+    if: github.event_name == 'push'
+    permissions:
+      contents: read
+    runs-on: ubuntu-22.04
+    outputs:
+      version: ${{ steps.metadata.outputs.version }}
+      previous_tag: ${{ steps.metadata.outputs.previous_tag }}
+      body_sha256: ${{ steps.metadata.outputs.body_sha256 }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Validate release notes and every version source
+        run: npm run validate:release-notes
+
+      - name: Verify the tag and expose canonical release metadata
+        id: metadata
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          npx --no-install tsx --eval "
+            import { createHash } from 'node:crypto';
+            import { appendFileSync } from 'node:fs';
+            import { validateReleaseNotes } from './scripts/lib/releaseNotesValidation.ts';
+            const result = validateReleaseNotes(process.cwd());
+            const expectedTag = \`v\${result.version}\`;
+            if (process.env.RELEASE_TAG !== expectedTag) {
+              throw new Error(\`Tag mismatch: expected \${expectedTag}, received \${process.env.RELEASE_TAG}.\`);
+            }
+            const bodySha256 = createHash('sha256').update(result.canonicalBody, 'utf8').digest('hex');
+            appendFileSync(
+              process.env.GITHUB_OUTPUT,
+              \`version=\${result.version}\nprevious_tag=\${result.previousTag}\nbody_sha256=\${bodySha256}\n\`
+            );
+            console.log(\`Validated \${process.env.RELEASE_TAG} from \${result.previousTag}; canonical body SHA-256: \${bodySha256}\`);
+          "
+
   create-release:
     name: Create the draft release
+    needs: validate-release
     if: github.event_name == 'push'
     permissions:
       contents: write
@@ -21,42 +73,99 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ github.ref }}
           persist-credentials: false
 
-      - name: Resolve the version from package.json
-        id: version
-        run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
-
-      - name: Create a single draft release for every matrix job to upload to
+      - name: Recreate a clean draft release
         id: create
         uses: actions/github-script@v7
         env:
+          RELEASE_BODY_SHA256: ${{ needs.validate-release.outputs.body_sha256 }}
           RELEASE_TAG: ${{ github.ref_name }}
-          RELEASE_VERSION: ${{ steps.version.outputs.version }}
+          RELEASE_VERSION: ${{ needs.validate-release.outputs.version }}
         with:
           script: |
-            const { data } = await github.rest.repos.createRelease({
+            const { recreateDraftRelease } = require('./scripts/releaseLifecycle.cjs');
+            const releaseId = await recreateDraftRelease({
+              github,
               owner: context.repo.owner,
               repo: context.repo.repo,
-              tag_name: process.env.RELEASE_TAG,
-              name: `Prompt Bank ${process.env.RELEASE_VERSION}`,
-              body: [
-                'Prompt Bank keeps your reusable prompts as local Markdown files with declared variables and optional sections. Fill them in, preview the composed text, and paste it into whichever AI tool you use.',
-                '',
-                'Download the installer for your operating system below.',
-                '',
-                'These builds are unsigned, so macOS Gatekeeper and Windows SmartScreen may warn on first open until code signing is added.',
-              ].join('\n'),
-              draft: true,
-              prerelease: false,
+              releaseTag: process.env.RELEASE_TAG,
+              releaseVersion: process.env.RELEASE_VERSION,
+              expectedBodySha256: process.env.RELEASE_BODY_SHA256,
             });
-            core.setOutput('release_id', data.id);
+            core.setOutput('release_id', releaseId);
+
+  install-dependencies:
+    name: Install dependencies (${{ matrix.name }})
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-latest
+            name: macOS Apple Silicon
+            slug: macos-arm64
+          - platform: macos-latest
+            name: macOS Intel
+            slug: macos-x64
+          - platform: ubuntu-22.04
+            name: Linux
+            slug: linux
+          - platform: windows-latest
+            name: Windows
+            slug: windows
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+
+      - name: Install frontend dependencies without repository write access
+        run: npm ci
+
+      - name: Archive installed dependencies
+        shell: bash
+        run: tar -czf node-modules.tgz node_modules
+
+      - name: Carry installed dependencies into the installer job
+        uses: actions/upload-artifact@v4
+        with:
+          name: prompt-bank-node-modules-${{ matrix.slug }}
+          path: node-modules.tgz
+          if-no-files-found: error
+          retention-days: 1
 
   build:
     name: Build installers (${{ matrix.name }})
-    needs: create-release
-    # Run for a tag push (after the draft exists) and for a manual dispatch (create-release is skipped).
-    if: ${{ always() && needs.create-release.result != 'failure' && needs.create-release.result != 'cancelled' }}
+    needs: [validate-release, create-release, install-dependencies]
+    # Manual runs are installer-only; tag runs require both read-only validation and draft creation.
+    if: >-
+      ${{
+        always() &&
+        (
+          (
+            github.event_name == 'workflow_dispatch' &&
+            needs.validate-release.result == 'skipped' &&
+            needs.create-release.result == 'skipped' &&
+            needs.install-dependencies.result == 'success'
+          ) ||
+          (
+            github.event_name == 'push' &&
+            needs.validate-release.result == 'success' &&
+            needs.create-release.result == 'success' &&
+            needs.install-dependencies.result == 'success'
+          )
+        )
+      }}
+    # Pre-existing risk: the third-party build/upload action requires write access to the shared draft.
     permissions:
       contents: write
     strategy:
@@ -91,8 +200,18 @@ jobs:
           node-version-file: .node-version
           cache: npm
 
+      - name: Download installed dependencies
+        uses: actions/download-artifact@v4
+        with:
+          name: prompt-bank-node-modules-${{ matrix.slug }}
+
+      - name: Restore installed dependencies
+        shell: bash
+        run: tar -xzf node-modules.tgz
+
       - name: Set up the pinned Rust toolchain
-        uses: dtolnay/rust-toolchain@master
+        # Upstream ref: dtolnay/rust-toolchain@master; selected toolchain: 1.94.0.
+        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
         with:
           toolchain: '1.94.0'
           # macOS builds both architectures; the targets are unused elsewhere.
@@ -108,11 +227,9 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf xdg-utils
 
-      - name: Install frontend dependencies
-        run: npm ci
-
       - name: Build installers and upload them to the shared draft release
-        uses: tauri-apps/tauri-action@v1
+        # Upstream ref: tauri-apps/tauri-action@v1.
+        uses: tauri-apps/tauri-action@944946e3e4cac6603d1fe8f514171e9ecd3c78aa
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
@@ -135,23 +252,41 @@ jobs:
 
   publish-release:
     name: Publish the release
-    needs: [create-release, build]
-    # Only publishes when every build job succeeded, so a partial release is never made public.
-    if: github.event_name == 'push'
+    needs: [validate-release, create-release, build]
+    # Only publish after validation, draft creation, and every matrix build succeeds.
+    if: >-
+      ${{
+        always() &&
+        github.event_name == 'push' &&
+        needs.validate-release.result == 'success' &&
+        needs.create-release.result == 'success' &&
+        needs.build.result == 'success'
+      }}
     permissions:
       contents: write
     runs-on: ubuntu-22.04
     steps:
-      - name: Flip the completed draft to a published release
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+          persist-credentials: false
+
+      - name: Verify and publish the completed draft
         uses: actions/github-script@v7
         env:
+          RELEASE_BODY_SHA256: ${{ needs.validate-release.outputs.body_sha256 }}
           RELEASE_ID: ${{ needs.create-release.outputs.release_id }}
+          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_VERSION: ${{ needs.validate-release.outputs.version }}
         with:
           script: |
-            await github.rest.repos.updateRelease({
+            const { verifyAndPublishRelease } = require('./scripts/releaseLifecycle.cjs');
+            await verifyAndPublishRelease({
+              github,
               owner: context.repo.owner,
               repo: context.repo.repo,
-              release_id: Number(process.env.RELEASE_ID),
-              draft: false,
-              make_latest: 'true',
+              releaseId: process.env.RELEASE_ID,
+              releaseTag: process.env.RELEASE_TAG,
+              releaseVersion: process.env.RELEASE_VERSION,
+              expectedBodySha256: process.env.RELEASE_BODY_SHA256,
             });
