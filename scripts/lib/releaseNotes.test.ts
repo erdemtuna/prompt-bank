@@ -60,6 +60,46 @@ describe('release-note trailer parsing', () => {
     }]);
   });
 
+  it('retains a typed release-note block immediately before terminal attribution trailers', () => {
+    expect(parseReleaseCommit(commit({
+      body: [
+        'Release-Note-Type: improvement',
+        'Release-Note: Made plans adapt to task complexity.',
+        'Release-Note: Improved analytical report flow.',
+        '',
+        'Co-authored-by: Example <example@example.com>',
+        'Copilot-Session: session-id'
+      ].join('\n')
+    }))).toEqual([
+      {
+        category: 'improvement',
+        text: 'Made plans adapt to task complexity.',
+        commitHash: HASH_A
+      },
+      {
+        category: 'improvement',
+        text: 'Improved analytical report flow.',
+        commitHash: HASH_A
+      }
+    ]);
+  });
+
+  it('ignores a typed release-note block when the terminal paragraph is prose', () => {
+    expect(parseReleaseCommit(commit({
+      subject: 'Use the fallback subject',
+      body: [
+        'Release-Note-Type: improvement',
+        'Release-Note: This paragraph is not terminal metadata.',
+        '',
+        'This is ordinary prose at the end.'
+      ].join('\n')
+    }))).toEqual([{
+      category: 'other',
+      text: 'Use the fallback subject',
+      commitHash: HASH_A
+    }]);
+  });
+
   it('retains indented multiline continuations in the terminal trailer block', () => {
     expect(parseReleaseCommit(commit({
       body: [

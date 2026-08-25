@@ -197,8 +197,6 @@ export function renderReleaseNotes(
 
   const lines = [
     `# Prompt Bank ${version}`,
-    '',
-    entries[0].text,
     ''
   ];
 
@@ -371,7 +369,41 @@ function parseTrailingTrailers(body: string): Trailer[] {
       break;
     }
   }
-  return parseTrailerParagraph(lines.slice(terminalParagraphStart)) ?? [];
+  const terminalTrailerResult = parseTrailerParagraph(lines.slice(terminalParagraphStart));
+  const terminalTrailers = terminalTrailerResult ?? [];
+  if (
+    terminalParagraphStart === 0
+    || terminalTrailerResult === undefined
+    || terminalTrailers.some(isReleaseNoteTrailer)
+  ) {
+    return terminalTrailers;
+  }
+
+  let previousParagraphEnd = terminalParagraphStart - 1;
+  while (previousParagraphEnd >= 0 && lines[previousParagraphEnd].trim() === '') {
+    previousParagraphEnd -= 1;
+  }
+  let previousParagraphStart = previousParagraphEnd;
+  while (previousParagraphStart > 0 && lines[previousParagraphStart - 1].trim() !== '') {
+    previousParagraphStart -= 1;
+  }
+
+  const previousTrailers = parseTrailerParagraph(
+    lines.slice(previousParagraphStart, previousParagraphEnd + 1)
+  );
+  const isTypedReleaseBlock = previousTrailers
+    && previousTrailers.every(isReleaseNoteTrailer)
+    && previousTrailers.some(({ key }) => key.toLowerCase() === 'release-note-type')
+    && previousTrailers.some(({ key }) => key.toLowerCase() === 'release-note');
+
+  return isTypedReleaseBlock
+    ? [...previousTrailers, ...terminalTrailers]
+    : terminalTrailers;
+}
+
+function isReleaseNoteTrailer({ key }: Trailer): boolean {
+  const normalizedKey = key.toLowerCase();
+  return normalizedKey === 'release-note' || normalizedKey === 'release-note-type';
 }
 
 function parseTrailerParagraph(lines: readonly string[]): Trailer[] | undefined {
