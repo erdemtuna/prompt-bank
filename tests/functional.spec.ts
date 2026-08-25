@@ -97,13 +97,32 @@ test('select controls switch exclusive implementation-plan branches', async ({ p
   const execution = page.getByLabel('Approved plan execution', { exact: true });
 
   await expect(execution).toHaveValue('nativeSubagents');
-  await expect(preview).toContainText('design implementation waves for native');
-  await expect(preview).not.toContainText('design implementation waves for independent Copilot CLI sessions');
+  await expect(preview).toContainText('Approved execution — native subagents:');
+  await expect(preview).toContainText('One worker is allowed.');
+  await expect(preview).not.toContainText("Keep each session's brief");
 
   await execution.selectOption('independentSessions');
-  await expect(preview).toContainText('Do not launch them while creating this plan.');
-  await expect(preview).toContainText('worktree, branch, standalone brief');
-  await expect(preview).not.toContainText('design implementation waves for native');
+  await expect(preview).toContainText('do not launch them while planning');
+  await expect(preview).toContainText("Keep each session's brief, scope, Done when, branch/worktree");
+  await expect(preview).not.toContainText('One worker is allowed.');
+});
+
+test('pull request delivery is off by default and composes only when checked', async ({ page }) => {
+  await page.getByRole('button', { name: 'Implementation Plan', exact: true }).click();
+  const preview = page.getByRole('region', { name: 'Composed prompt' });
+  const pullRequestDelivery = page.getByRole('checkbox', { name: 'Pull request delivery' });
+
+  await expect(pullRequestDelivery).not.toBeChecked();
+  await expect(preview).not.toContainText('create the required pull requests');
+  await expect(preview).not.toContainText('regression-preventing test evidence');
+
+  await pullRequestDelivery.check({ force: true });
+  await expect(preview).toContainText('create the required pull requests');
+  await expect(preview).toContainText('put regression-preventing test evidence in each description and a comment');
+
+  await pullRequestDelivery.uncheck({ force: true });
+  await expect(preview).not.toContainText('create the required pull requests');
+  await expect(preview).not.toContainText('regression-preventing test evidence');
 });
 
 test('slider controls select one ordered investigation-depth branch', async ({ page }) => {
@@ -113,16 +132,16 @@ test('slider controls select one ordered investigation-depth branch', async ({ p
 
   await expect(page.getByRole('checkbox', { name: 'Data flow and trust boundaries' })).toBeVisible();
   await expect(depth).toHaveAttribute('aria-valuetext', 'Focused');
-  await expect(preview).toContainText('trace the relevant implementation paths');
+  await expect(preview).toContainText('follow the relevant implementation and decision paths');
 
   await depth.press('Home');
   await expect(depth).toHaveAttribute('aria-valuetext', 'Brief');
-  await expect(preview).toContainText('inspect the minimum evidence needed');
-  await expect(preview).not.toContainText('trace the relevant implementation paths');
+  await expect(preview).toContainText('limit evidence collection to the minimum needed');
+  await expect(preview).not.toContainText('follow the relevant implementation and decision paths');
 
   await depth.press('End');
   await expect(depth).toHaveAttribute('aria-valuetext', 'Deep');
-  await expect(preview).toContainText('follow the topic across subsystem boundaries');
+  await expect(preview).toContainText('expand across subsystem boundaries, history, edge cases, and competing explanations');
 });
 
 test('both model selectors insert the chosen preset labels', async ({ page }) => {

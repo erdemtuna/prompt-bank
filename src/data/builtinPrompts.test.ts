@@ -48,13 +48,15 @@ const technicalArtifacts = [
     scopes: technicalScopes
   }
 ] as const;
-const coherenceMarker = 'Technical-design coherence:';
-const notationMarker = 'Diagram house rules:';
-const purposeOpenings = {
-  general: 'Opening — executive summary:',
-  brainstorm: 'Opening — option map:',
-  technicalDesign: 'Opening — decision brief:'
+const purposeGuidance = {
+  general: 'General analysis:',
+  brainstorm: 'Brainstorm:',
+  technicalDesign: 'Technical design:'
 } as const;
+const directOpening = 'Open with the direct answer or decision implication in one or two natural sentences, not a formal brief.';
+const diagramContract = 'Diagram integrity:';
+const artifactOverlap = 'Artifact overlap:';
+const semanticStop = 'Stop when adequately supported.';
 
 function builtinPrompt(id: string): Prompt {
   const prompt = appData.prompts.find((candidate) => candidate.id === id);
@@ -185,7 +187,8 @@ describe('Wave 2B built-in prompts', () => {
 
         expect(result.canCopy).toBe(true);
         expect(result.text).not.toMatch(/Design scope —|Design outcome:|Technical-design coherence:|\barchitecture\b/i);
-        expect(result.text).not.toContain(notationMarker);
+        expect(result.text).not.toContain(diagramContract);
+        expect(result.text).not.toContain(artifactOverlap);
         for (const artifact of technicalArtifacts) {
           expect(result.text).not.toContain(artifact.marker);
         }
@@ -193,21 +196,34 @@ describe('Wave 2B built-in prompts', () => {
     }
   });
 
-  it('uses exactly one purpose-specific opening without leaking other readability tiers', () => {
+  it('opens naturally and keeps purpose guidance isolated without report-opening leakage', () => {
     const prompt = builtinPrompt('investigate-a-topic');
 
-    for (const purpose of Object.keys(purposeOpenings) as Array<keyof typeof purposeOpenings>) {
+    for (const purpose of Object.keys(purposeGuidance) as Array<keyof typeof purposeGuidance>) {
       const result = compose(prompt, { purpose, technicalScope: 'fullStack' }, selectOptions(prompt));
 
-      expect(occurrenceCount(result.text, purposeOpenings[purpose])).toBe(1);
-      for (const [otherPurpose, marker] of Object.entries(purposeOpenings)) {
+      expect(occurrenceCount(result.text, directOpening)).toBe(1);
+      expect(result.text).not.toContain('Opening —');
+      expect(result.text).not.toMatch(/\b(?:Executive summary|Decision brief)\b/);
+      for (const [otherPurpose, marker] of Object.entries(purposeGuidance)) {
         expect(result.text.includes(marker)).toBe(otherPurpose === purpose);
       }
-      expect(result.text).toContain('Lead with the result, recommendation, or decision implication.');
     }
   });
 
-  it('applies the canonical notation once for technical design and only artifact-specific grammar when selected', () => {
+  it('uses connected prose, a conditional semantic stop, and no closing recap', () => {
+    const prompt = builtinPrompt('investigate-a-topic');
+    const result = compose(prompt, { purpose: 'general' }, selectOptions(prompt));
+
+    expect(occurrenceCount(result.text, 'Keep evidence beside its claim and related reasoning in connected paragraphs.')).toBe(1);
+    expect(result.text).toContain('Use headings, lists, and tables only when their structure helps.');
+    expect(occurrenceCount(result.text, semanticStop)).toBe(1);
+    expect(result.text).toContain('only when material');
+    expect(result.text).toContain('omit empty sections, research narration, source dumps, and closing recaps');
+    expect(occurrenceCount(result.text, 'closing recap')).toBe(1);
+  });
+
+  it('composes one compressed diagram contract and only the selected artifact grammar', () => {
     const prompt = builtinPrompt('investigate-a-topic');
     const noArtifacts = compose(
       prompt,
@@ -220,16 +236,44 @@ describe('Wave 2B built-in prompts', () => {
       selectOptions(prompt, 'apiDataFlowDiagram')
     );
 
-    expect(occurrenceCount(noArtifacts.text, notationMarker)).toBe(1);
-    expect(noArtifacts.text).toContain('8–12 primary elements as a preferred overview range');
-    expect(noArtifacts.text).toContain('split above 15 unless that would break one coherent scenario');
-    expect(noArtifacts.text).toContain('Put missing facts in an adjacent `Unresolved` list outside the diagram');
-    expect(noArtifacts.text).toContain('Dashed relationships remain reserved for asynchronous flow and never mean uncertainty');
+    expect(occurrenceCount(noArtifacts.text, diagramContract)).toBe(1);
+    expect(noArtifacts.text).toContain('use evidence-backed elements and one decision question, grammar, and abstraction level per selected view');
+    expect(noArtifacts.text).toContain('Keep names and boundaries consistent');
+    expect(noArtifacts.text).toContain('inspect host-native rendering before claiming validity');
+    expect(noArtifacts.text).toContain('keep unknowns outside diagrams or mark material uncertainty as `[Uncertain]`');
+    expect(noArtifacts.text).toContain('dashed relationships mean asynchronous flow');
     expect(noArtifacts.text).not.toContain('Data flow and trust boundaries:');
-    expect(occurrenceCount(dataFlow.text, notationMarker)).toBe(1);
-    expect(dataFlow.text).toContain('rectangles carrying `Producer`, `Consumer`, or `Transform` type text');
-    expect(dataFlow.text).toContain('Use `-->` for synchronous data movement and `-.->` for asynchronous movement');
+    expect(occurrenceCount(dataFlow.text, diagramContract)).toBe(1);
+    expect(dataFlow.text).toContain('typed `Producer`, `Consumer`, or `Transform` rectangles');
+    expect(dataFlow.text).toContain('Use `-->` for synchronous and `-.->` for asynchronous data movement');
     expect(dataFlow.text).not.toContain('Sequence diagram:');
+  });
+
+  it('requests only materially distinct mockup states', () => {
+    const prompt = builtinPrompt('investigate-a-topic');
+    const result = compose(
+      prompt,
+      { purpose: 'technicalDesign', technicalScope: 'frontend' },
+      selectOptions(prompt, 'uiMockups')
+    );
+
+    expect(occurrenceCount(result.text, 'UI mockups:')).toBe(1);
+    expect(result.text).toContain('Include only states with materially different behavior, risk, or recovery');
+    expect(result.text).toContain('do not add default, loading, empty, error, or narrow-width variants unless they are materially distinct');
+    expect(result.text).not.toContain('show default, loading, empty, error, and narrow-width states');
+  });
+
+  it('requires strict, explained subsumption for overlapping selected artifacts', () => {
+    const prompt = builtinPrompt('investigate-a-topic');
+    const result = compose(
+      prompt,
+      { purpose: 'technicalDesign', technicalScope: 'fullStack' },
+      selectOptions(prompt, 'systemArchitecture', 'apiDataFlowDiagram')
+    );
+
+    expect(occurrenceCount(result.text, artifactOverlap)).toBe(1);
+    expect(result.text).toContain('preserves its material entities, relationships, order, states, boundaries, failures, and uncertainty');
+    expect(result.text).toContain('Name and justify the substitute; otherwise include both.');
   });
 
   it('applies the locked technical artifact taxonomy only to available scopes', () => {
@@ -270,6 +314,24 @@ describe('Wave 2B built-in prompts', () => {
     }
   });
 
+  it('selects exactly one investigation-depth branch', () => {
+    const prompt = builtinPrompt('investigate-a-topic');
+    const depthMarkers = {
+      brief: 'limit evidence collection to the minimum needed to answer confidently',
+      focused: 'follow the relevant implementation and decision paths',
+      deep: 'expand across subsystem boundaries, history, edge cases, and competing explanations'
+    } as const;
+
+    for (const [analysisDepth, expectedMarker] of Object.entries(depthMarkers)) {
+      const result = compose(prompt, { purpose: 'general', analysisDepth }, selectOptions(prompt));
+
+      expect(result.text).toContain(expectedMarker);
+      for (const marker of Object.values(depthMarkers).filter((candidate) => candidate !== expectedMarker)) {
+        expect(result.text).not.toContain(marker);
+      }
+    }
+  });
+
   it('does not request architecture output when infer scope has all artifacts disabled', () => {
     const prompt = builtinPrompt('investigate-a-topic');
     const result = compose(
@@ -292,36 +354,29 @@ describe('Wave 2B built-in prompts', () => {
     );
 
     expect(result.text).toContain('use conservative Mermaid flowchart syntax with C4 Container semantics');
-    expect(result.text).toContain('stadium nodes for human actors');
-    expect(result.text).toContain('rectangles for deployable containers or services');
-    expect(result.text).toContain('Use a separate Component zoom only when one container needs decomposition');
+    expect(result.text).toContain('Represent people as stadiums');
+    expect(result.text).toContain('deployable containers or services as rectangles');
+    expect(result.text).toContain('Put decomposition in a separate Component zoom');
     expect(result.text).toContain('do not mix levels or use this view for runtime order or payload movement');
-    expect(result.text).toContain('For a greenfield system show only proposed `[Added]` elements');
     expect(result.text).toContain('Sequence diagram: use Mermaid sequence syntax for one scenario');
-    expect(result.text).toContain('Use `->>` for synchronous calls, `-)` for asynchronous sends, and `-->>` for returns.');
-    expect(result.text).toContain('Activity/workflow diagram: use Mermaid flowchart syntax with activity semantics');
+    expect(result.text).toContain('Use `->>` for synchronous calls, `-)` for asynchronous sends, and `-->>` for returns;');
+    expect(result.text).toContain('Activity/workflow diagram: use Mermaid flowchart syntax with UML activity meanings');
     expect(result.text).toContain('do not use this view for runtime message order or timing.');
     expect(result.text).toContain('Data flow and trust boundaries: use Mermaid flowchart syntax');
-    expect(occurrenceCount(result.text, coherenceMarker)).toBe(1);
-    expect(result.text).toContain('use its container names and boundaries as the shared vocabulary');
-    expect(result.text).toContain('each artifact must answer a different question');
+    expect(occurrenceCount(result.text, diagramContract)).toBe(1);
+    expect(occurrenceCount(result.text, artifactOverlap)).toBe(1);
+    expect(result.text).toContain('Keep names and boundaries consistent');
   });
 
-  it('keeps the effective investigation matrix below the unchanged safety limit', () => {
+  it('keeps the exact investigation matrix unchanged', () => {
     const prompt = builtinPrompt('investigate-a-topic');
     const cardinality = effectiveMatrixCardinality(prompt, 4096);
 
     expect(cardinality).toEqual({ count: 1164, exceededLimit: false });
   });
 
-  it('keeps implementation planning scope-aware without recreating technical design', () => {
+  it('retains implementation controls and defaults with pull-request delivery off', () => {
     const prompt = builtinPrompt('implementation-plan');
-    const expectedScopeText = {
-      infer: 'Technical scope — infer:',
-      frontend: 'Technical scope — frontend:',
-      backend: 'Technical scope — backend:',
-      fullStack: 'Technical scope — full-stack:'
-    };
 
     expect(prompt.modelRoles).toEqual({
       model: {
@@ -330,15 +385,69 @@ describe('Wave 2B built-in prompts', () => {
       },
       rubberDuckModel: {
         label: 'Planning and review model',
-        description: 'Used to critique the plan and review execution waves.'
+        description: 'Used to critique the plan and review material execution boundaries.'
       }
     });
+    expect(prompt.variables.map((variable) => ({
+      name: variable.name,
+      control: variable.control,
+      defaultValue: variable.defaultValue,
+      required: variable.required,
+      choices: variable.choices?.map((choice) => choice.id)
+    }))).toEqual([
+      {
+        name: 'executionTarget',
+        control: 'select',
+        defaultValue: 'nativeSubagents',
+        required: true,
+        choices: ['currentSession', 'nativeSubagents', 'independentSessions']
+      },
+      {
+        name: 'technicalScope',
+        control: 'select',
+        defaultValue: 'infer',
+        required: true,
+        choices: ['infer', 'frontend', 'backend', 'fullStack']
+      },
+      {
+        name: 'goal',
+        control: undefined,
+        defaultValue: undefined,
+        required: true,
+        choices: undefined
+      },
+      {
+        name: 'context',
+        control: undefined,
+        defaultValue: 'Use the current conversation, prior analysis, and repository state.',
+        required: false,
+        choices: undefined
+      },
+      {
+        name: 'constraints',
+        control: undefined,
+        defaultValue: 'none stated',
+        required: false,
+        choices: undefined
+      }
+    ]);
     expect(prompt.options.map((option) => [option.id, option.defaultEnabled])).toEqual([
       ['contractsAndIntegration', true],
       ['testsAndProof', true],
       ['operationsAndRollout', false],
-      ['docsAndConfiguration', false]
+      ['docsAndConfiguration', false],
+      ['pullRequestDelivery', false]
     ]);
+  });
+
+  it('keeps implementation planning scope-aware without recreating technical design', () => {
+    const prompt = builtinPrompt('implementation-plan');
+    const expectedScopeText = {
+      infer: 'Infer affected surfaces from context and inspected repository evidence',
+      frontend: 'Cover relevant interaction, state, accessibility, responsiveness, component, and service boundaries.',
+      backend: 'Cover relevant API, domain, persistence, migration, failure, security, observability, and data-flow boundaries.',
+      fullStack: 'Split frontend and backend only when useful'
+    };
 
     for (const [technicalScope, expected] of Object.entries(expectedScopeText)) {
       const result = compose(prompt, {
@@ -346,18 +455,165 @@ describe('Wave 2B built-in prompts', () => {
         technicalScope,
         executionTarget: 'currentSession'
       });
-
       expect(result.canCopy).toBe(true);
       expect(result.text).toContain(expected);
-      expect(result.text).toContain('Do not recreate a rigorous technical-design report.');
-      expect(result.text).toContain('Plan at a Glance');
-      expect(result.text.indexOf('Execution map')).toBeLessThan(result.text.indexOf('ordered waves'));
-      expect(result.text).toContain('outcome, scope, ownership, dependencies, implementation work, validation evidence, review gate, and completion contract');
+      expect(result.text).toContain('Reuse prior analysis and artifacts');
+      expect(result.text).toContain('Add Plan at a Glance or an execution/worktree map only when');
       expect(result.text).not.toContain(modelValues.model);
       for (const other of Object.values(expectedScopeText).filter((value) => value !== expected)) {
         expect(result.text).not.toContain(other);
       }
     }
+  });
+
+  it('forbids invented planning requirements and unsupported analysis claims', () => {
+    const implementation = builtinPrompt('implementation-plan');
+    const investigation = builtinPrompt('investigate-a-topic');
+    const noInventedRequirements = 'Do not invent requirements, schema fields, timelines, versions, or work not supported by context or inspected evidence.';
+    const unresolvedChoices = 'Surface unresolved choices and keep dependent work provisional until they are decided.';
+
+    expect(occurrenceCount(implementation.template, noInventedRequirements)).toBe(1);
+    expect(occurrenceCount(implementation.template, unresolvedChoices)).toBe(1);
+
+    for (const executionTarget of ['currentSession', 'nativeSubagents', 'independentSessions']) {
+      const result = compose(
+        implementation,
+        { goal: 'Deliver only the supported change.', technicalScope: 'infer', executionTarget },
+        selectOptions(implementation)
+      );
+
+      expect(occurrenceCount(result.text, noInventedRequirements)).toBe(1);
+      expect(occurrenceCount(result.text, unresolvedChoices)).toBe(1);
+    }
+
+    const investigationResult = compose(
+      investigation,
+      { purpose: 'general', analysisDepth: 'focused' },
+      selectOptions(investigation)
+    );
+    expect(investigationResult.text).toContain('Ground system-behavior claims in inspected files and symbols.');
+    expect(investigationResult.text).toContain('admit unverifiable gaps.');
+  });
+
+  it('has exactly 384 effective implementation states', () => {
+    const prompt = builtinPrompt('implementation-plan');
+
+    expect(effectiveMatrixCardinality(prompt, 4096)).toEqual({ count: 384, exceededLimit: false });
+  });
+
+  it('keeps baseline safety while independently composing tests and pull-request delivery', () => {
+    const prompt = builtinPrompt('implementation-plan');
+    const values = {
+      goal: 'Deliver the agreed change.',
+      technicalScope: 'infer',
+      executionTarget: 'currentSession'
+    };
+    const cases = [
+      {
+        name: 'all-off',
+        options: selectOptions(prompt),
+        tests: false,
+        pullRequest: false,
+        fallback: true
+      },
+      {
+        name: 'PR-only',
+        options: selectOptions(prompt, 'pullRequestDelivery'),
+        tests: false,
+        pullRequest: true,
+        fallback: false
+      },
+      {
+        name: 'tests-only',
+        options: selectOptions(prompt, 'testsAndProof'),
+        tests: true,
+        pullRequest: false,
+        fallback: false
+      },
+      {
+        name: 'tests+PR',
+        options: selectOptions(prompt, 'testsAndProof', 'pullRequestDelivery'),
+        tests: true,
+        pullRequest: true,
+        fallback: false
+      }
+    ] as const;
+
+    for (const scenario of cases) {
+      const result = compose(prompt, values, scenario.options);
+
+      expect(result.text, scenario.name).toContain('Required checks must pass before dependent consumption, merges, migrations, rollout, irreversible changes, or another material boundary.');
+      expect(result.text.includes('Put commands, outcomes, failure signals, and targeted versus final coverage in Done when.'), scenario.name).toBe(scenario.tests);
+      expect(result.text.includes('create the required pull requests'), scenario.name).toBe(scenario.pullRequest);
+      expect(result.text.includes('put regression-preventing test evidence in each description and a comment'), scenario.name).toBe(scenario.pullRequest);
+      expect(result.text.includes('No extra concerns selected.'), scenario.name).toBe(scenario.fallback);
+      if (!scenario.pullRequest) {
+        expect(result.text, scenario.name).not.toMatch(/\bpull request\b/i);
+      }
+    }
+  });
+
+  it('uses an adaptive simple sequence for every execution target without mandatory wave ceremony', () => {
+    const prompt = builtinPrompt('implementation-plan');
+    const executionMarkers = {
+      currentSession: 'Approved execution — current session:',
+      nativeSubagents: 'Approved execution — native subagents:',
+      independentSessions: 'Approved execution — independent sessions:'
+    } as const;
+
+    for (const [executionTarget, marker] of Object.entries(executionMarkers)) {
+      const result = compose(
+        prompt,
+        { goal: 'Make one localized change.', technicalScope: 'infer', executionTarget },
+        selectOptions(prompt)
+      );
+
+      expect(result.text).toContain(marker);
+      expect(result.text).toContain('Infer one sequence or multiple waves from dependency, concurrency, risk, migration, rollout, and irreversibility; use waves only when those boundaries help.');
+      expect(result.text).toContain('For each sequence or wave use **Outcome**, **Work**, and **Done when**');
+      expect(result.text).toContain('Required checks must pass before dependent consumption, merges, migrations, rollout, irreversible changes, or another material boundary.');
+      expect(result.text).toContain('Add Plan at a Glance or an execution/worktree map only when complexity, risk, concurrency, ordering, or handoffs require one.');
+
+      const targetBranch = result.text.split('\n').find((line) => line.includes(marker));
+      expect(targetBranch).toBeDefined();
+      expect(targetBranch).not.toMatch(/\bmultiple waves\b|\bexecution(?:\/worktree)? map\b|review (?:each|every) wave/i);
+    }
+  });
+
+  it('retains execution-target isolation, handoff, and recovery without leaking target branches', () => {
+    const prompt = builtinPrompt('implementation-plan');
+    const options = selectOptions(prompt);
+    const current = compose(
+      prompt,
+      { goal: 'Deliver the agreed change.', technicalScope: 'infer', executionTarget: 'currentSession' },
+      options
+    );
+    const native = compose(
+      prompt,
+      { goal: 'Deliver the agreed change.', technicalScope: 'infer', executionTarget: 'nativeSubagents' },
+      options
+    );
+    const independent = compose(
+      prompt,
+      { goal: 'Deliver the agreed change.', technicalScope: 'infer', executionTarget: 'independentSessions' },
+      options
+    );
+
+    expect(current.text).toContain('implement directly after approval.');
+    expect(current.text).toContain('Omit ownership, handoff, and worktree details unless material.');
+    expect(current.text).not.toContain('One worker is allowed.');
+    expect(current.text).not.toContain("Keep each session's brief");
+
+    expect(native.text).toContain('One worker is allowed.');
+    expect(native.text).toContain('Give each a standalone brief, file scope, and Done when');
+    expect(native.text).toContain('keep needed dependencies, handoffs, result details, and recovery local');
+    expect(native.text).toContain('Isolate concurrent writers that could collide in separate worktrees.');
+    expect(native.text).not.toContain("Keep each session's brief");
+
+    expect(independent.text).toContain('State shared repository, model, coordinator, and base once.');
+    expect(independent.text).toContain("Keep each session's brief, scope, Done when, branch/worktree, result path, context/reasoning guidance, recovery, and needed dependencies or merge order together.");
+    expect(independent.text).toContain('Give concurrent sessions separate worktrees; the coordinator reviews, merges, and advances dependencies.');
+    expect(independent.text).not.toContain('One worker is allowed.');
   });
 
   it('locks answer-first semantics and safety gates across the updated neutral built-ins', () => {
@@ -375,10 +631,10 @@ describe('Wave 2B built-in prompts', () => {
         'Do not fix anything yet.'
       ],
       'implementation-plan': [
-        'Plan at a Glance',
-        'Execution map',
-        'stable internal sequence',
-        'Do not start implementing until the plan is approved.'
+        'Infer one sequence or multiple waves',
+        'For each sequence or wave use **Outcome**, **Work**, and **Done when**',
+        'Required checks must pass before dependent consumption',
+        'do not implement before approval.'
       ],
       'compare-approaches': [
         'Lead with the recommendation and the decisive criterion.',
@@ -424,8 +680,8 @@ describe('Wave 2B built-in prompts', () => {
       executionTarget: 'independentSessions'
     });
 
-    expect(native.text).toContain(`native ${modelValues.model} subagents`);
-    expect(independentFullStack.text).toContain(`sessions using ${modelValues.model}`);
+    expect(native.text).toContain(`native ${modelValues.model} workers`);
+    expect(independentFullStack.text).toContain(`sessions with ${modelValues.model}`);
     expect(independentFullStack.text).toContain('Full-stack independent execution:');
   });
 
@@ -448,12 +704,11 @@ describe('Wave 2B built-in prompts', () => {
       technicalScope: 'infer',
       executionTarget: 'independentSessions'
     });
-    expect(implementationDefault.text).toContain('use native reviewers to check the wave');
-    expect(implementationDefault.text).toContain('independent Copilot CLI sessions.');
-    expect(implementationDefault.text).toContain('have agents critique it');
-    expect(implementationExplicit.text).toContain(`use native ${modelValues.rubberDuckModel} reviewers to check the wave`);
-    expect(implementationExplicit.text).toContain(`independent Copilot CLI sessions using ${modelValues.model}.`);
-    expect(implementationExplicit.text).toContain(`have ${modelValues.rubberDuckModel} agents critique it`);
+    expect(implementationDefault.text).toContain('use independent Copilot CLI sessions after approval');
+    expect(implementationDefault.text).not.toContain(modelValues.model);
+    expect(implementationDefault.text).not.toContain(modelValues.rubberDuckModel);
+    expect(implementationExplicit.text).toContain(`use independent Copilot CLI sessions with ${modelValues.model} after approval`);
+    expect(implementationExplicit.text).not.toContain(modelValues.rubberDuckModel);
 
     const reviewPullRequest = builtinPrompt('review-a-pull-request');
     const reviewDefault = compose(reviewPullRequest, {}, {}, {});

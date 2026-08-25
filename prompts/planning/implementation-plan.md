@@ -2,7 +2,7 @@
 id: implementation-plan
 title: Implementation Plan
 category: planning
-description: Turn an agreed goal into an ordered plan with waves, review gates, and success criteria.
+description: Turn an agreed goal into the smallest dependency-correct plan with appropriate checks.
 model_default: gpt-5-6-sol
 model_roles:
   model:
@@ -10,11 +10,11 @@ model_roles:
     description: Used by approved implementation workers.
   rubberDuckModel:
     label: Planning and review model
-    description: Used to critique the plan and review execution waves.
+    description: Used to critique the plan and review material execution boundaries.
 variables:
   - name: executionTarget
     label: Approved plan execution
-    description: How implementation waves should run after the plan is approved
+    description: How implementation should run after the plan is approved
     control: select
     default: nativeSubagents
     choices:
@@ -55,7 +55,7 @@ options:
     description: Ownership, compatibility, sequencing, and boundaries between components or systems.
   - id: testsAndProof
     label: Tests and proof
-    description: Concrete checks and evidence that prove each wave worked.
+    description: Concrete checks and evidence that prove the implementation worked.
   - id: operationsAndRollout
     label: Operations and rollout
     description: Observability, migration, deployment, rollback, and staged delivery.
@@ -63,6 +63,10 @@ options:
   - id: docsAndConfiguration
     label: Docs and configuration
     description: Documentation, configuration, and operator-facing changes.
+    default: false
+  - id: pullRequestDelivery
+    label: Pull request delivery
+    description: Include pull-request creation and proof after approved implementation.
     default: false
 ---
 
@@ -77,62 +81,61 @@ Context:
 Constraints:
 {{constraints}}
 
-Create and critique the plan in this session. Use native planning or review agents only where they genuinely improve the plan. The execution target below applies to implementation after approval, not to creation of the plan. Do not launch implementation work while planning.
+Create and critique the plan here, using planning or review agents only when useful. The target governs approved implementation, not planning; do not implement before approval.
 
-Begin with **Plan at a Glance**: the goal, recommended execution shape, critical dependency chain, parallel workstreams, highest-risk assumption, and overall completion proof. Follow it with an **Execution map** that shows ownership, dependency order, parallelization, worktrees where applicable, and merge or handoff points before any detailed wave.
+Do not invent requirements, schema fields, timelines, versions, or work not supported by context or inspected evidence. Surface unresolved choices and keep dependent work provisional until they are decided.
 
-Break the work into ordered waves rather than a flat list of steps. Give each wave an informative heading that states the outcome it unlocks. Keep every wave standalone and use this stable internal sequence: outcome, scope, ownership, dependencies, implementation work, validation evidence, review gate, and completion contract. State the repository, branch, exact files in scope, what proves the wave worked, what to report back, and what the next wave is allowed to assume.
+Infer one sequence or multiple waves from dependency, concurrency, risk, migration, rollout, and irreversibility; use waves only when those boundaries help. For each sequence or wave use **Outcome**, **Work**, and **Done when**, with outcome-oriented wave headings. Done when combines the result, required checks, and any consumed handoff.
 
-Put a coordinator-owned review gate at the end of every wave. At each gate, use native{{#model rubberDuckModel}} {{rubberDuckModel}}{{/model}} reviewers to check the wave against its own success criteria before the next wave starts, and fix what they find before moving on. The point of the gate is to catch a wrong assumption while it is still one wave deep instead of letting it propagate.
+Add owner, dependencies, scope, worktree, risks, migration, rollout, or recovery only when execution changes. Keep target-specific details with their worker or session, and do not add separate proof, review, success, completion, or handoff sections.
 
-Reuse prior analysis and any existing mockups or diagrams. Do not recreate a rigorous technical-design report. When an implementation-critical artifact is missing, assign its creation or validation to the wave that first needs it.
+Required checks must pass before dependent consumption, merges, migrations, rollout, irreversible changes, or another material boundary. Resolve blocking review findings before crossing it.
 
 {{#when executionTarget currentSession}}
-- Approved execution: design the waves for the current coordinator to implement directly in this session. Keep ownership and handoffs simple, but preserve the review gates and dependency order.
+- Approved execution — current session: implement directly after approval. Omit ownership, handoff, and worktree details unless material.
 {{/when}}
 {{#when executionTarget nativeSubagents}}
-- Approved execution: design implementation waves for native{{#model model}} {{model}}{{/model}} subagents managed by the current coordinator. State each agent brief, dependencies, allowed scope, completion contract, and the evidence the coordinator must review before advancing.
+- Approved execution — native subagents: use coordinator-managed native{{#model model}} {{model}}{{/model}} workers after approval. One worker is allowed. Give each a standalone brief, file scope, and Done when; keep needed dependencies, handoffs, result details, and recovery local. Isolate concurrent writers that could collide in separate worktrees.
 {{/when}}
 {{#when executionTarget independentSessions}}
-- Approved execution: design implementation waves for independent Copilot CLI sessions{{#model model}} using {{model}}{{/model}}. Do not launch them while creating this plan. For every session, state its repository, worktree, branch, standalone brief, allowed scope, dependencies, completion contract, result location, merge order, model/context/reasoning guidance, and recovery or resume instructions. Give concurrent sessions separate worktrees so they cannot collide. Keep the current coordinator responsible for reviewing results, merging completed waves, and advancing dependencies.
+- Approved execution — independent sessions: use independent Copilot CLI sessions{{#model model}} with {{model}}{{/model}} after approval; do not launch them while planning. State shared repository, model, coordinator, and base once. Keep each session's brief, scope, Done when, branch/worktree, result path, context/reasoning guidance, recovery, and needed dependencies or merge order together. If model, context, reasoning, or another execution setting is not established, leave it as an explicit decision instead of choosing a value. Give concurrent sessions separate worktrees; the coordinator reviews, merges, and advances dependencies.
 {{/when}}
 
 {{#when technicalScope infer}}
-- Technical scope — infer: derive the affected surfaces from the goal, context, and inspected repository evidence. Keep the plan lean, record the evidence behind the inference, and do not invent separate frontend or backend waves when the work does not require them.
+- Infer affected surfaces from context and inspected repository evidence; state assumptions and do not invent frontend or backend units.
 {{/when}}
 {{#when technicalScope frontend}}
-- Technical scope — frontend: organize waves around interaction states, component boundaries, client state, accessibility, responsiveness, and service integration. Require browser or component-level evidence appropriate to each wave.
+- Cover relevant interaction, state, accessibility, responsiveness, component, and service boundaries.
 {{/when}}
 {{#when technicalScope backend}}
-- Technical scope — backend: organize waves around APIs, domain behavior, persistence, migrations, failure handling, security boundaries, observability, and data flow. Require contract and service-level evidence appropriate to each wave.
+- Cover relevant API, domain, persistence, migration, failure, security, observability, and data-flow boundaries.
 {{/when}}
 {{#when technicalScope fullStack}}
-- Technical scope — full-stack: separate frontend and backend ownership where useful, make contract ownership explicit, sequence integration before dependent work, and require end-to-end evidence at the wave that joins the surfaces.
+- Split frontend and backend only when useful; own and verify changed contracts before consumers proceed, with end-to-end integration evidence.
 {{/when}}
 {{#when technicalScope fullStack executionTarget independentSessions}}
 - Full-stack independent execution: keep contract-producing and contract-consuming sessions in dependency order, with an explicit integration owner and merge point.
 {{/when}}
 
 {{#option contractsAndIntegration}}
-- Contracts and integration: identify contracts that change or must remain stable, assign an owner, state compatibility expectations, and place integration work after the required producers are verified.
+- Identify changed or stable contracts, ownership, compatibility, and producer-before-consumer order.
 {{/option}}
 {{#option testsAndProof}}
-- Tests and proof: for each wave, give concrete commands, checks, and observable outcomes. State what success and failure look like, and distinguish targeted proof from final regression coverage.
+- Put commands, outcomes, failure signals, and targeted versus final coverage in Done when.
 {{/option}}
 {{#option operationsAndRollout}}
-- Operations and rollout: include observability, migrations, deployment ordering, staged rollout, rollback, and compatibility windows in the waves that create those needs.
+- Add observability, migration, deployment, staged rollout, compatibility, and rollback only where needed.
 {{/option}}
 {{#option docsAndConfiguration}}
-- Docs and configuration: include documentation, configuration, examples, and operator-facing changes as real work in the waves that create the need, not as a cleanup wave at the end.
+- Keep needed docs, configuration, examples, and operator changes with the work that creates them.
+{{/option}}
+{{#option pullRequestDelivery}}
+- After approved implementation, create the required pull requests and put regression-preventing test evidence in each description and a comment.
 {{/option}}
 {{#allOptionsDisabled}}
-- Keep the plan lean: ordered waves, what each one changes, and how you know it is done.
+- No extra concerns selected.
 {{/allOptionsDisabled}}
 
-Before you present the plan, have{{#model rubberDuckModel}} {{rubberDuckModel}}{{/model}} agents critique it from different angles and fold in what holds up.
+Reuse prior analysis and artifacts; validate a missing or stale implementation-critical artifact in the first work that needs it. Add Plan at a Glance or an execution/worktree map only when complexity, risk, concurrency, ordering, or handoffs require one.
 
-Keep each open question or uncertain assumption beside the wave or decision it affects, with enough context to resolve it. Do not bury questions in a list at the end. Resolve answered questions into the plan itself.
-
-Present the final plan in this order: Plan at a Glance, execution map, and detailed waves. Put detailed success criteria and proof inside the waves; do not repeat the overall completion proof from Plan at a Glance or add a second summary.
-
-Do not start implementing until the plan is approved.
+Critique the plan from material perspectives, using separate review agents only when useful. Keep contextual questions beside affected work and integrate answers there. Stop when every requirement maps to Work and Done when evidence; do not add a second summary.
