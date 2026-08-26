@@ -27,6 +27,7 @@ Prefer to build it yourself? See [Building the desktop app](#building-the-deskto
 ## Why Prompt Bank
 
 - Composable. Declare text inputs, dropdowns, ordered sliders, optional focus toggles, and optional model preset labels, and the composed text updates live as you fill them in.
+- Traceable. Baseline additions and deletions appear as stable gutter markers in the prompt preview; hover or focus a marker to see which control and value caused it.
 - Scope aware. Show, hide, or disable controls from other workflow choices, combine value conditions, and label model guidance by its prompt-specific role.
 - Structured. Prompts are Markdown with a small, checked schema that catches malformed composition, while the built-ins provide explicit answer-first output contracts.
 - Yours to keep. Plain files you can diff, grep, and commit next to the code they belong to. No account, no proprietary format, nothing to migrate later.

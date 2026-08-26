@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { composeModelLabel, composePrompt, initialOptionValues, initialVariableValues, normalizeOptionValues, promptUsesModelPlaceholder, promptUsesRubberDuckModelPlaceholder } from './composer';
+import { composeModelLabel, composePrompt, initialOptionValues, initialVariableValues, normalizeOptionValues, planCompositionMarkers, promptUsesModelPlaceholder, promptUsesRubberDuckModelPlaceholder, type CompositionResult, type CompositionSegment, type CompositionTrace } from './composer';
 import { builtinPresetsRaw, builtinPromptSources, loadAppData, loadAppDataFromSources, resolvePromptsForApp } from './loaders';
 import { extractConditionVariableNames, parseModelPresets, parsePromptFile, renderPromptTemplateConditions, renderPromptTemplateControls, validatePromptCollection, type Prompt, type PromptIdentity, type PromptOption } from './schemas';
 import { formatCount, shouldUseTextarea } from '../components/promptUi';
+import { effectiveCompositionStates, effectiveMatrixCardinality } from '../../scripts/lib/compositionMatrix';
 
 describe('composer', () => {
   it('interpolates variables using double brace placeholders', () => {
@@ -763,6 +764,652 @@ describe('composer', () => {
       { id: 'backendFocus', label: 'Backend', defaultEnabled: false }
     ]))).toBe(false);
     expect(promptUsesRubberDuckModelPlaceholder(makePromptWithOptions('{{#allOptionsDisabled}}Use {{rubberDuckModel}}.{{/allOptionsDisabled}}'))).toBe(false);
+  });
+});
+
+describe('composition tracing', () => {
+  it('traces static text and direct substitutions with stable identities across value changes', () => {
+    const prompt = makePrompt('Hello {{name}} from {{place}}.');
+    const ordinary = composePrompt(prompt, { name: 'Ada', place: 'London' });
+    const first = tracedSegments(composePrompt(prompt, { name: 'Ada', place: 'London' }, {}, { trace: true }));
+    const second = tracedSegments(composePrompt(prompt, { name: 'Grace', place: 'London' }, {}, { trace: true }));
+    const firstName = first.find((segment) => segment.text === 'Ada');
+    const secondName = second.find((segment) => segment.text === 'Grace');
+
+    expect(first.map((segment) => segment.text).join('')).toBe('Hello Ada from London.');
+    expect(ordinary).not.toHaveProperty('trace');
+    expect(first.find((segment) => segment.text === 'Hello ')?.origins).toEqual([]);
+    expect(firstName?.origins).toEqual([{ kind: 'variable', name: 'name' }]);
+    expect(secondName?.id).toBe(firstName?.id);
+  });
+
+  it('traces select and slider branches and exposes added and removed segment identities', () => {
+    const prompt = makePromptWithControls(
+      [
+        '{{#when delivery inline}}Inline at {{depth}} depth.{{/when}}',
+        '{{#when delivery report}}Report at {{depth}} depth.{{/when}}'
+      ].join('\n'),
+      [
+        selectVariable('delivery', 'inline', ['inline', 'report']),
+        {
+          name: 'depth',
+          label: 'Depth',
+          required: true,
+          control: 'slider',
+          defaultValue: 'focused',
+          choices: [
+            { id: 'brief', label: 'Brief' },
+            { id: 'focused', label: 'Focused' }
+          ]
+        }
+      ]
+    );
+    const inline = tracedSegments(composePrompt(prompt, {
+      name: 'work',
+      place: 'repo',
+      delivery: 'inline',
+      depth: 'brief'
+    }, {}, { trace: true }));
+    const report = tracedSegments(composePrompt(prompt, {
+      name: 'work',
+      place: 'repo',
+      delivery: 'report',
+      depth: 'focused'
+    }, {}, { trace: true }));
+    const inlineIds = new Set(inline.map((segment) => segment.id));
+    const reportIds = new Set(report.map((segment) => segment.id));
+
+    expect(inline.map((segment) => segment.text).join('')).toBe('Inline at Brief depth.');
+    expect(report.map((segment) => segment.text).join('')).toBe('Report at Focused depth.');
+    expect([...inlineIds].some((id) => !reportIds.has(id))).toBe(true);
+    expect([...reportIds].some((id) => !inlineIds.has(id))).toBe(true);
+    expect(inline.find((segment) => segment.text === 'Brief')?.origins).toEqual([
+      { kind: 'variable', name: 'delivery' },
+      { kind: 'variable', name: 'depth' }
+    ]);
+  });
+
+  it('traces enabled options, removals, and the all-options-disabled fallback', () => {
+    const prompt = makePromptWithOptions(
+      [
+        '{{#option frontendFocus}}Frontend {{name}}.{{/option}}',
+        '{{#option backendFocus}}Backend {{place}}.{{/option}}',
+        '{{#allOptionsDisabled}}General review.{{/allOptionsDisabled}}'
+      ].join('\n')
+    );
+    const enabled = tracedSegments(composePrompt(prompt, { name: 'UI', place: 'API' }, {}, {
+      optionValues: { frontendFocus: true, backendFocus: false },
+      trace: true
+    }));
+    const fallback = tracedSegments(composePrompt(prompt, { name: 'UI', place: 'API' }, {}, {
+      optionValues: { frontendFocus: false, backendFocus: false },
+      trace: true
+    }));
+
+    expect(enabled.map((segment) => segment.text).join('')).toBe('Frontend UI.');
+    expect(enabled.find((segment) => segment.text === 'UI')?.origins).toEqual([
+      { kind: 'option', id: 'frontendFocus' },
+      { kind: 'variable', name: 'name' }
+    ]);
+    expect(fallback.map((segment) => segment.text).join('')).toBe('General review.');
+    expect(fallback.flatMap((segment) => segment.origins)).toEqual(expect.arrayContaining([
+      { kind: 'option', id: 'frontendFocus' },
+      { kind: 'option', id: 'backendFocus' }
+    ]));
+    expect(new Set(enabled.map((segment) => segment.id))).not.toEqual(new Set(fallback.map((segment) => segment.id)));
+  });
+
+  it('includes applicability controllers in dependent option origins', () => {
+    const prompt = makePromptWithControls(
+      [
+        '{{#option mockups}}Create mockups.{{/option}}',
+        '{{#allOptionsDisabled}}No artifact selected.{{/allOptionsDisabled}}'
+      ].join('\n'),
+      [selectVariable('scope', 'frontend', ['frontend', 'backend'])],
+      [{
+        id: 'mockups',
+        label: 'Mockups',
+        defaultEnabled: true,
+        enabledWhen: { scope: ['frontend'] }
+      }]
+    );
+    const enabled = tracedSegments(composePrompt(prompt, {
+      name: 'work',
+      place: 'repo',
+      scope: 'frontend'
+    }, {}, { optionValues: { mockups: true }, trace: true }));
+    const disabled = tracedSegments(composePrompt(prompt, {
+      name: 'work',
+      place: 'repo',
+      scope: 'backend'
+    }, {}, { optionValues: { mockups: true }, trace: true }));
+
+    expect(enabled[0].origins).toEqual([
+      { kind: 'option', id: 'mockups' },
+      { kind: 'variable', name: 'scope' }
+    ]);
+    expect(disabled[0].origins).toEqual([
+      { kind: 'option', id: 'mockups' },
+      { kind: 'variable', name: 'scope' }
+    ]);
+  });
+
+  it('attributes the all-options fallback only to currently visible options', () => {
+    const prompt = makePromptWithControls(
+      [
+        '{{#option visibleFocus}}Visible focus.{{/option}}',
+        '{{#option hiddenFocus}}Hidden focus.{{/option}}',
+        '{{#allOptionsDisabled}}General review.{{/allOptionsDisabled}}'
+      ].join('\n'),
+      [selectVariable('mode', 'normal', ['normal', 'special'])],
+      [
+        {
+          id: 'visibleFocus',
+          label: 'Visible focus',
+          defaultEnabled: false,
+          enabledWhen: { mode: ['normal'] }
+        },
+        {
+          id: 'hiddenFocus',
+          label: 'Hidden focus',
+          defaultEnabled: false,
+          visibleWhen: { mode: ['special'] }
+        }
+      ]
+    );
+    const fallback = tracedSegments(composePrompt(prompt, {
+      name: 'work',
+      place: 'repo',
+      mode: 'normal'
+    }, {}, {
+      optionValues: { visibleFocus: false, hiddenFocus: false },
+      trace: true
+    }));
+    const origins = fallback.flatMap((segment) => segment.origins);
+
+    expect(fallback.map((segment) => segment.text).join('')).toBe('General review.');
+    expect(origins).toEqual(expect.arrayContaining([
+      { kind: 'option', id: 'visibleFocus' },
+      { kind: 'variable', name: 'mode' }
+    ]));
+    expect(origins).not.toContainEqual({ kind: 'option', id: 'hiddenFocus' });
+  });
+
+  it('traces every active condition origin and suppresses conditions with inactive variables', () => {
+    const prompt = makePromptWithControls(
+      '{{#when purpose technical scope backend}}Backend {{place}}.{{/when}}',
+      [
+        selectVariable('purpose', 'technical', ['general', 'technical']),
+        {
+          ...selectVariable('scope', 'backend', ['frontend', 'backend']),
+          visibleWhen: { purpose: ['technical'] }
+        }
+      ]
+    );
+    const active = tracedSegments(composePrompt(prompt, {
+      name: 'work',
+      place: 'repo',
+      purpose: 'technical',
+      scope: 'backend'
+    }, {}, { trace: true }));
+    const inactive = tracedSegments(composePrompt(prompt, {
+      name: 'work',
+      place: 'repo',
+      purpose: 'general',
+      scope: 'backend'
+    }, {}, { trace: true }));
+
+    expect(active.find((segment) => segment.text === 'Backend ')?.origins).toEqual([
+      { kind: 'variable', name: 'purpose' },
+      { kind: 'variable', name: 'scope' }
+    ]);
+    expect(active.find((segment) => segment.text === 'repo')?.origins).toEqual([
+      { kind: 'variable', name: 'place' },
+      { kind: 'variable', name: 'purpose' },
+      { kind: 'variable', name: 'scope' }
+    ]);
+    expect(inactive).toEqual([]);
+  });
+
+  it('traces optional and required model roles, including model fragments inside conditions', () => {
+    const optionalPrompt = makePromptWithControls(
+      '{{#when delivery agents}}Use agents{{#model model}} using {{model}}{{/model}}.{{/when}}',
+      [selectVariable('delivery', 'agents', ['agents', 'direct'])]
+    );
+    const omitted = tracedSegments(composePrompt(optionalPrompt, {
+      name: 'work',
+      place: 'repo',
+      delivery: 'agents'
+    }, {}, { trace: true }));
+    const selected = tracedSegments(composePrompt(optionalPrompt, {
+      name: 'work',
+      place: 'repo',
+      delivery: 'agents'
+    }, { model: 'GPT' }, { trace: true }));
+    const required = composePrompt(makePrompt('Use {{model}} for {{name}}.'), {
+      name: 'review',
+      place: 'repo'
+    }, {}, { trace: true });
+
+    expect(omitted.map((segment) => segment.text).join('')).toBe('Use agents.');
+    expect(selected.map((segment) => segment.text).join('')).toBe('Use agents using GPT.');
+    expect(selected.find((segment) => segment.text === ' using ')?.origins).toEqual([
+      { kind: 'model', role: 'model' },
+      { kind: 'variable', name: 'delivery' }
+    ]);
+    expect(selected.find((segment) => segment.text === 'GPT')?.origins).toEqual([
+      { kind: 'model', role: 'model' },
+      { kind: 'variable', name: 'delivery' }
+    ]);
+    expect(new Set(selected.map((segment) => segment.id)).size).toBe(selected.length);
+    expect(required.text).toBe('Use {{model}} for review.');
+    expect(tracedSegments(required).find((segment) => segment.text === '{{model}}')?.origins)
+      .toEqual([{ kind: 'model', role: 'model' }]);
+  });
+
+  it('preserves trace through CRLF, standalone blocks, whitespace cleanup, trimming, and empty substitution', () => {
+    const source = [
+      '  ',
+      '{{#option frontendFocus}}',
+      '  Frontend.  ',
+      '{{/option}}',
+      '   ',
+      '{{#option backendFocus}}',
+      '{{name}}',
+      '{{/option}}',
+      ' '
+    ].join('\r\n');
+    const result = composePrompt(makePromptWithOptions(source), { name: '', place: 'repo' }, {}, {
+      optionValues: { frontendFocus: true, backendFocus: true },
+      trace: true
+    });
+    const segments = tracedSegments(result);
+
+    expect(result.text).toBe('Frontend.  \n\n');
+    expect(segments.map((segment) => segment.text).join('')).toBe(result.text);
+    expect(result.text).not.toContain('\r');
+    expect(segments.some((segment) => segment.origins.some((origin) =>
+      origin.kind === 'variable' && origin.name === 'name'
+    ))).toBe(false);
+  });
+
+  it('collapses repeated newlines across different origins without losing surviving identities', () => {
+    const prompt = makePromptWithOptions(
+      'Start{{#option frontendFocus}}\n{{/option}}{{#option backendFocus}}\n\nEnd{{/option}}'
+    );
+    const segments = tracedSegments(composePrompt(prompt, { name: 'UI', place: 'API' }, {}, {
+      optionValues: { frontendFocus: true, backendFocus: true },
+      trace: true
+    }));
+    const newlineSegments = segments.filter((segment) => segment.text.includes('\n'));
+
+    expect(segments.map((segment) => segment.text).join('')).toBe('Start\n\nEnd');
+    expect(newlineSegments).toHaveLength(2);
+    expect(newlineSegments[0].origins).toEqual([{ kind: 'option', id: 'frontendFocus' }]);
+    expect(newlineSegments[1].origins).toEqual([{ kind: 'option', id: 'backendFocus' }]);
+  });
+
+  it('trims leading and trailing segment boundaries while retaining overlapping origins', () => {
+    const prompt = makePromptWithOptions(
+      ' \n{{#option frontendFocus}}  Review {{name}}.  {{/option}}\n '
+    );
+    const segments = tracedSegments(composePrompt(prompt, { name: 'UI', place: 'repo' }, {}, {
+      optionValues: { frontendFocus: true, backendFocus: false },
+      trace: true
+    }));
+
+    expect(segments.map((segment) => segment.text).join('')).toBe('Review UI.');
+    expect(segments[0].text.startsWith('Review')).toBe(true);
+    expect(segments.at(-1)?.text.endsWith('.')).toBe(true);
+    expect(segments.find((segment) => segment.text === 'UI')?.origins).toEqual([
+      { kind: 'option', id: 'frontendFocus' },
+      { kind: 'variable', name: 'name' }
+    ]);
+  });
+
+  it('matches plain composition for every effective state of every built-in prompt', () => {
+    const builtIns = {
+      model: 'GPT-5.6 Sol 128K context high reasoning',
+      rubberDuckModel: 'GPT-5.6 Sol 128K context extra high reasoning'
+    };
+
+    for (const prompt of loadAppData().prompts) {
+      const cardinality = effectiveMatrixCardinality(prompt, 4096);
+      expect(cardinality.exceededLimit, prompt.id).toBe(false);
+      let visited = 0;
+
+      for (const state of effectiveCompositionStates(prompt, 4096)) {
+        const ordinary = composePrompt(prompt, state.values, builtIns, {
+          optionValues: state.optionValues
+        });
+        const traced = composePrompt(prompt, state.values, builtIns, {
+          optionValues: state.optionValues,
+          trace: true
+        });
+        const segments = tracedSegments(traced);
+
+        expect(traced.text, prompt.id).toBe(ordinary.text);
+        expect(segments.map((segment) => segment.text).join(''), prompt.id).toBe(ordinary.text);
+        expect(new Set(segments.map((segment) => segment.id)).size, prompt.id).toBe(segments.length);
+        visited += 1;
+      }
+
+      expect(visited, prompt.id).toBe(cardinality.count);
+    }
+  }, 60_000);
+});
+
+describe('composition marker planning', () => {
+  const trace = (segments: CompositionSegment[]): CompositionTrace => ({ status: 'available', segments });
+  const markers = (baseline: CompositionTrace, current: CompositionTrace) => {
+    const result = planCompositionMarkers(baseline, current);
+    expect(result.status).toBe('available');
+    if (result.status !== 'available') throw new Error('Expected marker plan to be available.');
+    return result.markers;
+  };
+
+  it('represents changed text with one deletion and one addition without exposing deleted text', () => {
+    const baseline = trace([
+      { id: 'a', text: 'Start\n', origins: [] },
+      { id: 'choice', text: 'Focused', origins: [{ kind: 'variable', name: 'depth' }] },
+      { id: 'b', text: '\nEnd', origins: [] }
+    ]);
+    const current = trace([
+      { id: 'a', text: 'Start\n', origins: [] },
+      { id: 'choice', text: 'Deep', origins: [{ kind: 'variable', name: 'depth' }] },
+      { id: 'b', text: '\nEnd', origins: [] }
+    ]);
+
+    const plan = markers(baseline, current);
+    expect(plan).toEqual([
+      {
+        kind: 'deletion',
+        anchor: { kind: 'segment', currentSegmentId: 'choice', offset: 0 },
+        origins: [{ kind: 'variable', name: 'depth' }],
+        order: 0,
+        runIds: [1]
+      },
+      {
+        kind: 'addition',
+        currentRanges: [{ currentSegmentId: 'choice', startOffset: 0, endOffset: 4 }],
+        origins: [{ kind: 'variable', name: 'depth' }],
+        order: 1,
+        runIds: [1]
+      }
+    ]);
+    expect(plan.every((marker) => !('text' in marker))).toBe(true);
+  });
+
+  it('classifies same-segment insertion, deletion, and replacement with local offsets', () => {
+    const origin = [{ kind: 'variable' as const, name: 'intent' }];
+    const baseline = trace([{ id: 'intent', text: 'Review code.', origins: origin }]);
+    const insertion = markers(
+      baseline,
+      trace([{ id: 'intent', text: 'Review new code.', origins: origin }])
+    );
+    expect(insertion).toEqual([{
+      kind: 'addition',
+      currentRanges: [{ currentSegmentId: 'intent', startOffset: 7, endOffset: 11 }],
+      origins: origin,
+      order: 0,
+      runIds: [1]
+    }]);
+
+    const deletion = markers(
+      trace([{ id: 'intent', text: 'Review new code.', origins: origin }]),
+      baseline
+    );
+    expect(deletion).toEqual([{
+      kind: 'deletion',
+      anchor: { kind: 'segment', currentSegmentId: 'intent', offset: 7 },
+      origins: origin,
+      order: 0,
+      runIds: [1]
+    }]);
+
+    const replacement = markers(
+      trace([{ id: 'intent', text: 'Mode: brief.', origins: origin }]),
+      trace([{ id: 'intent', text: 'Mode: deep.', origins: origin }])
+    );
+    expect(replacement.map((marker) => marker.kind)).toEqual(['deletion', 'addition']);
+    expect(replacement).toContainEqual(expect.objectContaining({
+      kind: 'deletion',
+      anchor: { kind: 'segment', currentSegmentId: 'intent', offset: 6 }
+    }));
+    expect(replacement).toContainEqual(expect.objectContaining({
+      kind: 'addition',
+      currentRanges: [{ currentSegmentId: 'intent', startOffset: 6, endOffset: 10 }]
+    }));
+  });
+
+  it('merges adjacent additions in one change run and combines their origins', () => {
+    expect(markers(
+      trace([{ id: 'static', text: 'Start', origins: [] }]),
+      trace([
+        { id: 'static', text: 'Start', origins: [] },
+        { id: 'one', text: '\nOne', origins: [{ kind: 'option', id: 'details' }] },
+        { id: 'two', text: ' two', origins: [{ kind: 'variable', name: 'depth' }] }
+      ])
+    )).toEqual([{
+      kind: 'addition',
+      currentRanges: [
+        { currentSegmentId: 'one', startOffset: 0, endOffset: 4 },
+        { currentSegmentId: 'two', startOffset: 0, endOffset: 4 }
+      ],
+      origins: [
+        { kind: 'option', id: 'details' },
+        { kind: 'variable', name: 'depth' }
+      ],
+      order: 0,
+      runIds: [1]
+    }]);
+  });
+
+  it('anchors a deletion before the next non-whitespace survivor', () => {
+    expect(markers(
+      trace([
+        { id: 'before', text: 'Before ', origins: [] },
+        { id: 'deleted', text: 'remove', origins: [{ kind: 'option', id: 'details' }] },
+        { id: 'after', text: ' after', origins: [] }
+      ]),
+      trace([
+        { id: 'before', text: 'Before ', origins: [] },
+        { id: 'after', text: ' after', origins: [] }
+      ])
+    )).toEqual([{
+      kind: 'deletion',
+      anchor: { kind: 'segment', currentSegmentId: 'after', offset: 1 },
+      origins: [{ kind: 'option', id: 'details' }],
+      order: 0,
+      runIds: [1]
+    }]);
+  });
+
+  it('anchors an end deletion after the previous non-whitespace survivor', () => {
+    expect(markers(
+      trace([
+        { id: 'before', text: 'Before', origins: [] },
+        { id: 'deleted', text: ' remove', origins: [{ kind: 'option', id: 'details' }] }
+      ]),
+      trace([{ id: 'before', text: 'Before', origins: [] }])
+    )[0]).toEqual({
+      kind: 'deletion',
+      anchor: { kind: 'segment', currentSegmentId: 'before', offset: 6 },
+      origins: [{ kind: 'option', id: 'details' }],
+      order: 0,
+      runIds: [1]
+    });
+  });
+
+  it('anchors complete-content deletion at content start and handles current-only content', () => {
+    expect(markers(
+      trace([{ id: 'deleted', text: 'Everything', origins: [{ kind: 'variable', name: 'mode' }] }]),
+      trace([])
+    )).toEqual([{
+      kind: 'deletion',
+      anchor: { kind: 'content-start' },
+      origins: [{ kind: 'variable', name: 'mode' }],
+      order: 0,
+      runIds: [1]
+    }]);
+
+    expect(markers(
+      trace([]),
+      trace([{ id: 'added', text: 'Everything', origins: [{ kind: 'variable', name: 'mode' }] }])
+    )).toEqual([{
+      kind: 'addition',
+      currentRanges: [{ currentSegmentId: 'added', startOffset: 0, endOffset: 10 }],
+      origins: [{ kind: 'variable', name: 'mode' }],
+      order: 0,
+      runIds: [1]
+    }]);
+  });
+
+  it('skips a whitespace-only survivor when choosing a visual deletion anchor', () => {
+    expect(markers(
+      trace([
+        { id: 'deleted', text: 'Remove', origins: [] },
+        { id: 'whitespace', text: '\n\n', origins: [] },
+        { id: 'target', text: 'Target', origins: [] }
+      ]),
+      trace([
+        { id: 'whitespace', text: '\n\n', origins: [] },
+        { id: 'target', text: 'Target', origins: [] }
+      ])
+    )[0]).toMatchObject({
+      kind: 'deletion',
+      anchor: { kind: 'segment', currentSegmentId: 'target', offset: 0 }
+    });
+  });
+
+  it('merges coincident deletions while preserving origins and change-run identities', () => {
+    expect(markers(
+      trace([
+        { id: 'first', text: 'First', origins: [{ kind: 'option', id: 'first' }] },
+        { id: 'whitespace', text: '\n', origins: [] },
+        { id: 'second', text: 'Second', origins: [{ kind: 'variable', name: 'mode' }] },
+        { id: 'target', text: 'Target', origins: [] }
+      ]),
+      trace([
+        { id: 'whitespace', text: '\n', origins: [] },
+        { id: 'target', text: 'Target', origins: [] }
+      ])
+    )).toEqual([{
+      kind: 'deletion',
+      anchor: { kind: 'segment', currentSegmentId: 'target', offset: 0 },
+      origins: [
+        { kind: 'option', id: 'first' },
+        { kind: 'variable', name: 'mode' }
+      ],
+      order: 0,
+      runIds: [1, 2]
+    }]);
+  });
+
+  it('retains a controller origin when a dependent option is cleared', () => {
+    const prompt = makePromptWithControls(
+      [
+        '{{#option mockups}}Create mockups.{{/option}}',
+        '{{#allOptionsDisabled}}No artifact selected.{{/allOptionsDisabled}}'
+      ].join('\n'),
+      [selectVariable('scope', 'frontend', ['frontend', 'backend'])],
+      [{
+        id: 'mockups',
+        label: 'Mockups',
+        defaultEnabled: true,
+        enabledWhen: { scope: ['frontend'] }
+      }]
+    );
+    const baseline = tracedComposition(composePrompt(prompt, {
+      name: 'work',
+      place: 'repo',
+      scope: 'frontend'
+    }, {}, { optionValues: { mockups: true }, trace: true }));
+    const current = tracedComposition(composePrompt(prompt, {
+      name: 'work',
+      place: 'repo',
+      scope: 'backend'
+    }, {}, { optionValues: { mockups: true }, trace: true }));
+    const deletion = markers(baseline, current).find((marker) =>
+      marker.kind === 'deletion'
+      && marker.origins.some((origin) => origin.kind === 'option' && origin.id === 'mockups')
+    );
+
+    expect(deletion?.origins).toEqual(expect.arrayContaining([
+      { kind: 'option', id: 'mockups' },
+      { kind: 'variable', name: 'scope' }
+    ]));
+  });
+
+  it('returns an empty marker plan after an initially-off option round trip', () => {
+    const prompt = makePromptWithOptions(
+      [
+        '{{#option details}}Details.{{/option}}',
+        '{{#allOptionsDisabled}}Summary.{{/allOptionsDisabled}}'
+      ].join('\n'),
+      [{ id: 'details', label: 'Details', defaultEnabled: false }]
+    );
+    const compose = (enabled: boolean) => tracedComposition(composePrompt(prompt, {
+      name: 'work',
+      place: 'repo'
+    }, {}, { optionValues: { details: enabled }, trace: true }));
+    const baseline = compose(false);
+
+    expect(markers(baseline, compose(true)).length).toBeGreaterThan(0);
+    expect(markers(baseline, compose(false))).toEqual([]);
+  });
+
+  it('provides deterministic order and origins for filtering and visual tie-breaking', () => {
+    const depth = [{ kind: 'variable' as const, name: 'depth' }];
+    const details = [{ kind: 'option' as const, id: 'details' }];
+    const plan = markers(
+      trace([
+        { id: 'head', text: 'Head ', origins: [] },
+        { id: 'first', text: 'Brief', origins: depth },
+        { id: 'middle', text: ' middle ', origins: [] },
+        { id: 'second', text: 'No details', origins: details },
+        { id: 'tail', text: ' tail', origins: [] }
+      ]),
+      trace([
+        { id: 'head', text: 'Head ', origins: [] },
+        { id: 'first', text: 'Deep', origins: depth },
+        { id: 'middle', text: ' middle ', origins: [] },
+        { id: 'second', text: 'Details', origins: details },
+        { id: 'tail', text: ' tail', origins: [] }
+      ])
+    );
+    const depthMarkers = plan.filter((marker) => marker.origins.some((origin) =>
+      origin.kind === 'variable' && origin.name === 'depth'
+    ));
+
+    expect(plan.map((marker) => marker.order)).toEqual([0, 1, 2, 3]);
+    expect(depthMarkers.map((marker) => marker.order)).toEqual([0, 1]);
+    expect(plan.map((marker) => marker.runIds)).toEqual([[1], [1], [2], [2]]);
+  });
+
+  it('returns unavailable when either trace mapping is absent', () => {
+    const value = trace([{ id: 'a', text: 'Same', origins: [] }]);
+    expect(planCompositionMarkers(undefined, value)).toEqual({ status: 'unavailable' });
+    expect(planCompositionMarkers(value, { status: 'unavailable', reason: 'segment-text-mismatch' }))
+      .toEqual({ status: 'unavailable' });
+  });
+
+  it('returns no markers when different trace branches render identical text', () => {
+    const baseline = trace([{
+      id: 'branch-a',
+      text: 'Same text',
+      origins: [{ kind: 'variable', name: 'mode' }]
+    }]);
+    const current = trace([{
+      id: 'branch-b',
+      text: 'Same text',
+      origins: [{ kind: 'variable', name: 'mode' }]
+    }]);
+
+    expect(planCompositionMarkers(baseline, current)).toEqual({
+      status: 'available',
+      markers: []
+    });
   });
 });
 
@@ -1936,4 +2583,18 @@ function selectVariable(name: string, defaultValue: string, choices: string[]): 
     defaultValue,
     choices: choices.map((id) => ({ id, label: id }))
   };
+}
+
+function tracedSegments(result: CompositionResult): CompositionSegment[] {
+  return tracedComposition(result).segments;
+}
+
+function tracedComposition(
+  result: CompositionResult
+): Extract<CompositionTrace, { status: 'available' }> {
+  expect(result.trace?.status).toBe('available');
+  if (result.trace?.status !== 'available') {
+    throw new Error('Expected composition trace to be available.');
+  }
+  return result.trace;
 }

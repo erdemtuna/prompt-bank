@@ -105,6 +105,11 @@ test('select controls switch exclusive implementation-plan branches', async ({ p
   await expect(preview).toContainText('do not launch them while planning');
   await expect(preview).toContainText("Keep each session's brief, scope, Done when, branch/worktree");
   await expect(preview).not.toContainText('One worker is allowed.');
+  const executionMarker = preview.locator(
+    '[data-marker-hit-target][aria-label*="Changed by Approved plan execution:"]'
+  ).first();
+  await executionMarker.focus();
+  await expect(page.getByRole('tooltip')).toContainText('Changed by Approved plan execution:');
 });
 
 test('pull request delivery is off by default and composes only when checked', async ({ page }) => {
@@ -138,6 +143,11 @@ test('slider controls select one ordered investigation-depth branch', async ({ p
   await expect(depth).toHaveAttribute('aria-valuetext', 'Brief');
   await expect(preview).toContainText('limit evidence collection to the minimum needed');
   await expect(preview).not.toContainText('follow the relevant implementation and decision paths');
+  const depthMarker = preview.locator(
+    '[data-marker-hit-target][aria-label*="Changed by Analysis depth: Brief"]'
+  ).first();
+  await depthMarker.focus();
+  await expect(page.getByRole('tooltip')).toContainText('Changed by Analysis depth: Brief');
 
   await depth.press('End');
   await expect(depth).toHaveAttribute('aria-valuetext', 'Deep');
@@ -151,7 +161,17 @@ test('both model selectors insert the chosen preset labels', async ({ page }) =>
   const alternativeGroup = page.getByRole('group', { name: 'Alternative model', exact: true });
 
   await generalGroup.getByRole('combobox', { name: 'General model', exact: true }).selectOption('opus-5');
+  await expect(preview.locator(
+    '[data-marker-hit-target][aria-label*="Changed by General model: Opus 5"]'
+  ).first()).toBeVisible();
+  await expect(alternativeGroup.getByRole('combobox', { name: 'Alternative model', exact: true })).toHaveValue('');
   await alternativeGroup.getByRole('combobox', { name: 'Alternative model', exact: true }).selectOption('gpt-5-6-sol');
+  const alternativeMarker = preview.locator(
+    '[data-marker-hit-target][aria-label*="Changed by Alternative model: GPT-5.6 Sol"]'
+  ).first();
+  await alternativeMarker.focus();
+  await expect(page.getByRole('tooltip')).toContainText('Changed by Alternative model: GPT-5.6 Sol');
+  await expect(generalGroup.getByRole('combobox', { name: 'General model', exact: true })).toHaveValue('opus-5');
   await expect(preview).toContainText(
     'Perform the primary review using Opus 5 1M context medium reasoning, and use a set of reviewers using GPT-5.6 Sol 1M context medium reasoning as independent second opinions.'
   );
@@ -165,13 +185,29 @@ test('context and reasoning selectors refine the composed model label', async ({
   await expect(generalGroup.getByRole('combobox', { name: 'General model', exact: true })).toHaveValue('');
   await expect(preview).toContainText('Perform the primary review, and use a set of reviewers as independent second opinions.');
   await generalGroup.getByRole('combobox', { name: 'General model', exact: true }).selectOption('gpt-5-6-terra');
-  await generalGroup.getByRole('combobox', { name: 'General model context', exact: true }).selectOption('1m');
+  const surface = preview.locator('[data-preview-surface]');
+  await surface.evaluate((element) => {
+    element.style.height = '100px';
+    element.style.minHeight = '100px';
+    element.style.maxHeight = '100px';
+    element.scrollTop = 0;
+  });
+  const context = generalGroup.getByRole('combobox', { name: 'General model context', exact: true });
+  await context.selectOption('standard');
+  await expect(preview.locator(
+    '[data-marker-hit-target][aria-label*="Changed by General model: GPT-5.6 Terra medium reasoning"]'
+  ).first()).toBeVisible();
+  await expect.poll(() => surface.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+  await context.selectOption('1m');
   const reasoning = generalGroup.getByRole('combobox', { name: 'General model reasoning', exact: true });
   await expect(reasoning.locator('option')).toHaveText(['no', 'minimal', 'low', 'medium', 'high', 'extra high', 'max']);
   await reasoning.selectOption('max');
   await expect(preview).toContainText('Perform the primary review using GPT-5.6 Terra 1M context max reasoning');
+  await expect(preview.locator(
+    '[data-marker-hit-target][aria-label*="Changed by General model: GPT-5.6 Terra 1M context max reasoning"]'
+  ).first()).toBeVisible();
 
-  await generalGroup.getByRole('combobox', { name: 'General model context', exact: true }).selectOption('standard');
+  await context.selectOption('standard');
   await expect(preview).toContainText('Perform the primary review using GPT-5.6 Terra max reasoning');
 
   await reasoning.selectOption('none');
@@ -206,8 +242,8 @@ test.describe('Wave 1A composer fixture', () => {
     await expect(page.getByLabel('Technical scope', { exact: true })).toBeVisible();
     await expect(page.getByLabel('Topology', { exact: true })).toBeVisible();
     await expect(page.getByLabel('Execution', { exact: true })).toBeVisible();
-    await expect(page.getByLabel('Intent')).toBeVisible();
-    await expect(page.getByLabel('Technical notes')).toBeVisible();
+    await expect(page.getByLabel('Intent', { exact: true })).toBeVisible();
+    await expect(page.getByLabel('Technical notes', { exact: true })).toBeVisible();
     await expect(page.getByText('Copied as', { exact: false })).toHaveCount(0);
     await expect(page.getByText(/routing/i)).toHaveCount(0);
   });
@@ -247,8 +283,8 @@ test.describe('Wave 1A composer fixture', () => {
     await expect(page.getByLabel('Execution', { exact: true })).toHaveCount(0);
     await expect(page.getByRole('checkbox', { name: 'UI mockups and recovery-state interactions' })).toHaveCount(0);
     await expect(page.getByRole('checkbox', { name: 'General summary' })).toBeVisible();
-    await expect(page.getByLabel('Technical notes')).toHaveCount(0);
-    await expect(page.getByLabel('Intent')).toBeVisible();
+    await expect(page.getByLabel('Technical notes', { exact: true })).toHaveCount(0);
+    await expect(page.getByLabel('Intent', { exact: true })).toBeVisible();
   });
 
   test('shows active prompt-specific model roles and preserves independent selections', async ({ page }) => {
@@ -310,10 +346,179 @@ test.describe('Wave 1A composer fixture', () => {
     await expect(model).toHaveValue('gpt-5-6-sol');
     await expect(model.locator('option').first()).not.toHaveText('No explicit model');
     await expect(preview).toContainText('Required backend model: GPT-5.6 Sol 1M context medium reasoning.');
+    await expect(preview.locator(
+      '[data-marker-hit-target][aria-label*="Changed by Technical scope: Backend"]'
+    ).first()).toBeVisible();
+    await expect(preview.locator(
+      '[data-marker-hit-target][aria-label*="Changed by Approved execution model:"]'
+    )).toHaveCount(0);
 
     await page.getByLabel('Technical scope', { exact: true }).selectOption('fullStack');
     await expect(model).toHaveValue('');
     await expect(model.locator('option').first()).toHaveText('No explicit model');
     await expect(preview).not.toContainText('GPT-5.6 Sol 1M context medium reasoning');
+    await expect(preview.locator(
+      '[data-marker-hit-target][aria-label^="Changed by Approved execution model:"]'
+    )).toHaveCount(0);
   });
+
+  test('keeps one exact preview with semantic gutter shapes and hover/focus backtraces', async ({ page }) => {
+    const region = page.getByRole('region', { name: 'Composed prompt' });
+    const preview = region.locator('pre');
+    const markers = region.locator('[data-composition-marker]');
+    const initialText = await preview.innerText();
+    await expect(page.getByRole('button', { name: /^(Preview|Changes)/ })).toHaveCount(0);
+    await expect(page.getByText(/All changes|Show all|Affected text|previous action/i)).toHaveCount(0);
+    await expect(markers).toHaveCount(0);
+    await expect(preview.locator('ins, del')).toHaveCount(0);
+
+    const intent = page.getByLabel('Intent', { exact: true });
+    const initialIntent = await intent.inputValue();
+    await intent.fill(`${initialIntent} Add one sentence.`);
+    await expect(region.locator('[data-composition-marker][data-marker-kind="addition"]')).not.toHaveCount(0);
+    await expect(region.locator('[data-composition-marker][data-marker-kind="deletion"]')).toHaveCount(0);
+    const insertionTarget = region.locator('[data-marker-hit-target][data-marker-kind="addition"]').first();
+    await insertionTarget.hover();
+    await expect(page.getByRole('tooltip')).toContainText(`Changed by Intent: ${initialIntent} Add one sentence.`);
+    await page.mouse.move(0, 0);
+    await expect(page.getByRole('tooltip')).toHaveCount(0);
+    await insertionTarget.focus();
+    await expect(insertionTarget).toBeFocused();
+    await expect(page.getByRole('tooltip')).toContainText(`Changed by Intent: ${initialIntent} Add one sentence.`);
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('tooltip')).toHaveCount(0);
+    await intent.focus();
+    await insertionTarget.focus();
+    await expect(page.getByRole('tooltip')).toBeVisible();
+    await intent.focus();
+    await expect(page.getByRole('tooltip')).toHaveCount(0);
+
+    await intent.fill(initialIntent.replace('safer ', ''));
+    await expect(region.locator('[data-composition-marker][data-marker-kind="addition"]')).toHaveCount(0);
+    await expect(region.locator('[data-composition-marker][data-marker-kind="deletion"]')).not.toHaveCount(0);
+
+    await intent.fill(initialIntent.replace('safer', 'resilient'));
+    const textAddition = region.locator('[data-composition-marker][data-marker-kind="addition"]').first();
+    const textDeletion = region.locator('[data-composition-marker][data-marker-kind="deletion"]').first();
+    await expect(textAddition).toBeVisible();
+    await expect(textDeletion).toBeVisible();
+    const replacementTarget = region.locator('[data-marker-hit-target][data-marker-kind="change"]').first();
+    await replacementTarget.hover();
+    await expect(page.getByRole('tooltip')).toContainText('Changed by Intent:');
+    const markerColors = await page.evaluate(() => {
+      const addition = document.querySelector<HTMLElement>('[data-composition-marker][data-marker-kind="addition"]');
+      const deletion = document.querySelector<HTMLElement>('[data-composition-marker][data-marker-kind="deletion"]');
+      const probe = document.createElement('span');
+      probe.style.backgroundColor = 'var(--sw-accent)';
+      document.body.append(probe);
+      const colors = {
+        addition: addition ? getComputedStyle(addition).backgroundColor : '',
+        deletion: deletion ? getComputedStyle(deletion).backgroundColor : '',
+        accent: getComputedStyle(probe).backgroundColor
+      };
+      probe.remove();
+      return colors;
+    });
+    expect(markerColors.addition).toBe(markerColors.accent);
+    expect(markerColors.deletion).toBe(markerColors.accent);
+    await intent.fill(initialIntent);
+    await expect(markers).toHaveCount(0);
+
+    const depth = page.getByRole('slider', { name: 'Analysis depth' });
+    const stateDiagram = page.getByRole('checkbox', { name: 'State diagram' });
+    await depth.press('End');
+    await expect(stateDiagram).toBeEnabled();
+    await stateDiagram.check({ force: true });
+    await expect(region.locator('[data-marker-kind="addition"]')).not.toHaveCount(0);
+    await stateDiagram.uncheck({ force: true });
+    await depth.press('ArrowLeft');
+    await expect(markers).toHaveCount(0);
+
+    const apiFlow = page.getByRole('checkbox', { name: 'API / data-flow diagram' });
+    await apiFlow.uncheck({ force: true });
+    await expect(region.locator('[data-marker-kind="deletion"]')).not.toHaveCount(0);
+    const deletionTarget = region.locator('[data-marker-hit-target][data-marker-kind="deletion"]').first();
+    await deletionTarget.hover();
+    await expect(page.getByRole('tooltip')).toContainText('Removed by API / data-flow diagram: disabled');
+    await page.mouse.move(0, 0);
+    await page.locator('[data-option-control="apiFlow"] label').hover();
+    await expect(page.getByRole('tooltip')).toHaveCount(0);
+
+    const scope = page.getByLabel('Technical scope', { exact: true });
+    const mockups = page.getByRole('checkbox', { name: 'UI mockups and recovery-state interactions' });
+    const surface = region.locator('[data-preview-surface]');
+    await surface.evaluate((element) => {
+      element.style.height = '150px';
+      element.style.minHeight = '150px';
+      element.style.maxHeight = '150px';
+      element.scrollTop = 0;
+    });
+    await scope.selectOption('backend');
+    await expect(mockups).toBeDisabled();
+    await expect(mockups).not.toBeChecked();
+    await expect(region.locator('[data-marker-kind="deletion"]')).not.toHaveCount(0);
+    const relatedTarget = region.locator(
+      '[data-marker-hit-target][aria-label*="Changed by Technical scope: Backend"][aria-label*="UI mockups and recovery-state interactions: disabled"]'
+    ).first();
+    await relatedTarget.focus();
+    await expect(page.getByRole('tooltip')).toContainText('Changed by Technical scope: Backend');
+    await expect(page.getByRole('tooltip')).toContainText('Also affected by');
+    await expect(page.getByRole('tooltip')).toContainText('UI mockups and recovery-state interactions: disabled');
+    await expect(preview).not.toHaveText(initialText ?? '');
+
+    await page.getByRole('button', { name: 'Copy composed prompt' }).click();
+    const clipboard = await page.evaluate(() => navigator.clipboard.readText());
+    expect(normalizeText(clipboard)).toBe(normalizeText(await preview.innerText()));
+
+    await preview.evaluate((element) => {
+      const selection = window.getSelection();
+      const range = document.createRange();
+      range.selectNodeContents(element);
+      selection?.removeAllRanges();
+      selection?.addRange(range);
+    });
+    await page.keyboard.press('Control+C');
+    const selectedClipboard = await page.evaluate(() => navigator.clipboard.readText());
+    expect(normalizeText(selectedClipboard)).toBe(normalizeText(await preview.innerText()));
+  });
+
+  test('debounces textarea auto-scroll until typing pauses', async ({ page }) => {
+    const region = page.getByRole('region', { name: 'Composed prompt' });
+    const surface = region.locator('[data-preview-surface]');
+    const notes = page.getByLabel('Technical notes', { exact: true });
+    await surface.evaluate((element) => {
+      element.style.height = '100px';
+      element.style.minHeight = '100px';
+      element.style.maxHeight = '100px';
+      element.scrollTop = 0;
+    });
+
+    await notes.focus();
+    const originalNotes = await notes.inputValue();
+    await notes.fill(`${originalNotes} More evidence.`);
+    await page.waitForTimeout(100);
+    expect(await surface.evaluate((element) => element.scrollTop)).toBe(0);
+    await expect(region.locator(
+      '[data-marker-hit-target][aria-label*="Changed by Technical notes:"]'
+    ).first()).toBeVisible();
+
+    await expect.poll(() => surface.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+    await page.waitForTimeout(350);
+    const settled = await surface.evaluate((element) => element.scrollTop);
+    await page.waitForTimeout(350);
+    expect(await surface.evaluate((element) => element.scrollTop)).toBeCloseTo(settled, 1);
+    await expect(notes).toBeFocused();
+  });
+});
+
+test('an initially-off checkbox round trip removes every gutter marker', async ({ page }) => {
+  await page.getByRole('button', { name: 'Implementation Plan', exact: true }).click();
+  const delivery = page.getByRole('checkbox', { name: 'Pull request delivery' });
+  const markers = page.getByRole('region', { name: 'Composed prompt' }).locator('[data-composition-marker]');
+  await expect(markers).toHaveCount(0);
+
+  await delivery.check({ force: true });
+  await expect(page.locator('[data-marker-kind="addition"]')).not.toHaveCount(0);
+  await delivery.uncheck({ force: true });
+  await expect(markers).toHaveCount(0);
 });

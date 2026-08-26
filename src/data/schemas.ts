@@ -775,37 +775,49 @@ function validateTemplatePlaceholders(
   return issues;
 }
 
-type TemplateSpan =
-  | { kind: 'placeholder'; name: string }
-  | { kind: 'optionOpen'; optionId: string; raw: string }
-  | { kind: 'optionClose'; raw: string }
-  | { kind: 'allOptionsDisabledOpen'; raw: string }
-  | { kind: 'allOptionsDisabledClose'; raw: string }
-  | { kind: 'whenOpen'; conditions: ValueCondition[]; raw: string }
-  | { kind: 'whenClose'; raw: string }
-  | { kind: 'modelOpen'; role: ModelRoleName; raw: string }
-  | { kind: 'modelClose'; raw: string }
-  | { kind: 'invalid'; message: string };
+export type PromptTemplateToken =
+  | { kind: 'text'; start: number; end: number; raw: string }
+  | { kind: 'placeholder'; start: number; end: number; raw: string; name: string }
+  | { kind: 'optionOpen'; start: number; end: number; optionId: string; raw: string }
+  | { kind: 'optionClose'; start: number; end: number; raw: string }
+  | { kind: 'allOptionsDisabledOpen'; start: number; end: number; raw: string }
+  | { kind: 'allOptionsDisabledClose'; start: number; end: number; raw: string }
+  | { kind: 'whenOpen'; start: number; end: number; conditions: ValueCondition[]; raw: string }
+  | { kind: 'whenClose'; start: number; end: number; raw: string }
+  | { kind: 'modelOpen'; start: number; end: number; role: ModelRoleName; raw: string }
+  | { kind: 'modelClose'; start: number; end: number; raw: string }
+  | { kind: 'invalid'; start: number; end: number; raw: string; message: string };
 
-type ValueCondition = {
+export type ValueCondition = {
   variableName: string;
   choiceId: string;
 };
 
-function extractTemplateSpans(template: string): TemplateSpan[] {
-  const spans: TemplateSpan[] = [];
+export function tokenizePromptTemplate(template: string): PromptTemplateToken[] {
+  const spans: PromptTemplateToken[] = [];
   let index = 0;
+  let textStart = 0;
 
   while (index < template.length) {
     if (template.startsWith('{{', index)) {
+      if (textStart < index) {
+        spans.push({ kind: 'text', start: textStart, end: index, raw: template.slice(textStart, index) });
+      }
       const closeIndex = template.indexOf('}}', index + 2);
       if (closeIndex === -1) {
-        spans.push({ kind: 'invalid', message: `Unclosed placeholder "${template.slice(index)}".` });
+        spans.push({
+          kind: 'invalid',
+          start: index,
+          end: template.length,
+          raw: template.slice(index),
+          message: `Unclosed placeholder "${template.slice(index)}".`
+        });
         break;
       }
 
       const hasExtraClosingBrace = template[closeIndex + 2] === '}';
       const raw = template.slice(index, closeIndex + (hasExtraClosingBrace ? 3 : 2));
+      const end = closeIndex + (hasExtraClosingBrace ? 3 : 2);
       const content = template.slice(index + 2, closeIndex).trim();
       const optionMatch = content.match(/^#option\s+([A-Za-z_][A-Za-z0-9_]*)$/);
       const modelMatch = content.match(/^#model[ \t]+(model|rubberDuckModel)$/);
@@ -820,54 +832,67 @@ function extractTemplateSpans(template: string): TemplateSpan[] {
         : undefined;
 
       if (hasExtraClosingBrace) {
-        spans.push({ kind: 'invalid', message: `Invalid placeholder syntax "${raw}". Use {{variableName}} with letters, numbers, or underscores only.` });
+        spans.push({ kind: 'invalid', start: index, end, raw, message: `Invalid placeholder syntax "${raw}". Use {{variableName}} with letters, numbers, or underscores only.` });
       } else if (optionMatch) {
-        spans.push({ kind: 'optionOpen', optionId: optionMatch[1], raw });
+        spans.push({ kind: 'optionOpen', start: index, end, optionId: optionMatch[1], raw });
       } else if (content === '/option') {
-        spans.push({ kind: 'optionClose', raw });
+        spans.push({ kind: 'optionClose', start: index, end, raw });
       } else if (content === '#allOptionsDisabled') {
-        spans.push({ kind: 'allOptionsDisabledOpen', raw });
+        spans.push({ kind: 'allOptionsDisabledOpen', start: index, end, raw });
       } else if (content === '/allOptionsDisabled') {
-        spans.push({ kind: 'allOptionsDisabledClose', raw });
+        spans.push({ kind: 'allOptionsDisabledClose', start: index, end, raw });
       } else if (whenConditions) {
-        spans.push({ kind: 'whenOpen', conditions: whenConditions, raw });
+        spans.push({ kind: 'whenOpen', start: index, end, conditions: whenConditions, raw });
       } else if (content === '/when') {
-        spans.push({ kind: 'whenClose', raw });
+        spans.push({ kind: 'whenClose', start: index, end, raw });
       } else if (modelMatch) {
-        spans.push({ kind: 'modelOpen', role: modelMatch[1] as ModelRoleName, raw });
+        spans.push({ kind: 'modelOpen', start: index, end, role: modelMatch[1] as ModelRoleName, raw });
       } else if (content === '/model') {
-        spans.push({ kind: 'modelClose', raw });
+        spans.push({ kind: 'modelClose', start: index, end, raw });
       } else if (content.startsWith('#option') || content.startsWith('/option')) {
-        spans.push({ kind: 'invalid', message: `Invalid option block syntax "${raw}". Use {{#option optionId}} and {{/option}}.` });
+        spans.push({ kind: 'invalid', start: index, end, raw, message: `Invalid option block syntax "${raw}". Use {{#option optionId}} and {{/option}}.` });
       } else if (content.startsWith('#allOptionsDisabled') || content.startsWith('/allOptionsDisabled')) {
-        spans.push({ kind: 'invalid', message: `Invalid all-options-disabled block syntax "${raw}". Use {{#allOptionsDisabled}} and {{/allOptionsDisabled}}.` });
+        spans.push({ kind: 'invalid', start: index, end, raw, message: `Invalid all-options-disabled block syntax "${raw}". Use {{#allOptionsDisabled}} and {{/allOptionsDisabled}}.` });
       } else if (content.startsWith('#when') || content.startsWith('/when')) {
         const message = whenTokens?.length && whenTokens.every((token) => variableNamePattern.test(token)) && whenTokens.length % 2 !== 0
           ? `Invalid condition block syntax "${raw}". Conditions must contain complete variable-choice pairs.`
           : `Invalid condition block syntax "${raw}". Use {{#when variableName choiceId [variableName choiceId ...]}} and {{/when}}.`;
-        spans.push({ kind: 'invalid', message });
+        spans.push({ kind: 'invalid', start: index, end, raw, message });
       } else if (content.startsWith('#model') || content.startsWith('/model')) {
-        spans.push({ kind: 'invalid', message: `Invalid model block syntax "${raw}". Use {{#model model}} or {{#model rubberDuckModel}} and {{/model}}.` });
+        spans.push({ kind: 'invalid', start: index, end, raw, message: `Invalid model block syntax "${raw}". Use {{#model model}} or {{#model rubberDuckModel}} and {{/model}}.` });
       } else if (variableNamePattern.test(content)) {
-        spans.push({ kind: 'placeholder', name: content });
+        spans.push({ kind: 'placeholder', start: index, end, raw, name: content });
       } else {
-        spans.push({ kind: 'invalid', message: `Invalid placeholder syntax "${raw}". Use {{variableName}} with letters, numbers, or underscores only.` });
+        spans.push({ kind: 'invalid', start: index, end, raw, message: `Invalid placeholder syntax "${raw}". Use {{variableName}} with letters, numbers, or underscores only.` });
       }
 
-      index = closeIndex + (hasExtraClosingBrace ? 3 : 2);
+      index = end;
+      textStart = index;
       continue;
     }
 
     if (template.startsWith('}}', index)) {
-      spans.push({ kind: 'invalid', message: 'Unbalanced closing braces "}}".' });
+      if (textStart < index) {
+        spans.push({ kind: 'text', start: textStart, end: index, raw: template.slice(textStart, index) });
+      }
+      spans.push({ kind: 'invalid', start: index, end: index + 2, raw: '}}', message: 'Unbalanced closing braces "}}".' });
       index += 2;
+      textStart = index;
       continue;
     }
 
     index += 1;
   }
 
+  if (textStart < template.length && index >= template.length) {
+    spans.push({ kind: 'text', start: textStart, end: template.length, raw: template.slice(textStart) });
+  }
+
   return spans;
+}
+
+function extractTemplateSpans(template: string): PromptTemplateToken[] {
+  return tokenizePromptTemplate(template).filter((span) => span.kind !== 'text');
 }
 
 function conditionPairs(tokens: string[]): ValueCondition[] {

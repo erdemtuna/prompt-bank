@@ -1,7 +1,7 @@
 import { Input, Select, Slider, Text, Textarea, Tooltip, makeStyles } from '@fluentui/react-components';
 import { CheckmarkRegular, CheckmarkCircleRegular, ErrorCircleRegular, InfoRegular } from '@fluentui/react-icons';
-import { useCallback, useEffect, useId, useMemo, useState, type ReactNode } from 'react';
-import { composeModelLabel, composePrompt, initialOptionValues, initialVariableValues, normalizeOptionValues, promptModelRoleRequirements, type OptionValues, type VariableValues } from '../data/composer';
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
+import { composeModelLabel, composePrompt, initialOptionValues, initialVariableValues, normalizeOptionValues, planCompositionMarkers, promptModelRoleRequirements, type CompositionControlOrigin, type CompositionMarker, type OptionValues, type VariableValues } from '../data/composer';
 import type { ModelPreset, ModelPresetVariant, ModelRoleRequirement, Prompt, PromptOption, PromptVariable, ValidationIssue } from '../data/schemas';
 import { formatCount, shortcutModifier, shouldUseTextarea } from './promptUi';
 
@@ -200,11 +200,6 @@ const useStyles = makeStyles({
     textTransform: 'uppercase',
     color: 'var(--sw-muted)'
   },
-  previewMeta: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '14px'
-  },
   charCount: {
     fontFamily: 'var(--sw-mono)',
     fontSize: '11px',
@@ -212,11 +207,12 @@ const useStyles = makeStyles({
     color: 'var(--sw-muted)',
     fontVariantNumeric: 'tabular-nums'
   },
-  preview: {
-    margin: 0,
+  previewViewport: {
+    position: 'relative',
     minHeight: 'clamp(260px, 46vh, 560px)',
     maxHeight: 'min(70vh, 720px)',
     overflow: 'auto',
+    overflowAnchor: 'none',
     padding: '22px 24px',
     backgroundColor: 'var(--sw-panel)',
     border: '1px solid var(--sw-rule)',
@@ -238,6 +234,78 @@ const useStyles = makeStyles({
       minHeight: 'clamp(260px, 46vh, 560px)',
       maxHeight: 'min(70vh, 720px)'
     }
+  },
+  previewContent: {
+    position: 'relative',
+    minWidth: 0,
+    minHeight: '1.65em'
+  },
+  previewText: {
+    margin: 0,
+    minHeight: '100%',
+    color: 'inherit',
+    font: 'inherit',
+    lineHeight: 'inherit',
+    whiteSpace: 'inherit',
+    overflowWrap: 'inherit'
+  },
+  markerLayer: {
+    position: 'absolute',
+    inset: '0 auto 0 -24px',
+    width: '24px',
+    overflow: 'hidden',
+    pointerEvents: 'none',
+    userSelect: 'none'
+  },
+  markerInteractionLayer: {
+    position: 'absolute',
+    inset: '0 auto 0 -24px',
+    width: '24px',
+    pointerEvents: 'none',
+    userSelect: 'none'
+  },
+  markerHitTarget: {
+    position: 'absolute',
+    left: '2px',
+    width: '20px',
+    height: '20px',
+    margin: 0,
+    padding: 0,
+    border: 0,
+    backgroundColor: 'transparent',
+    color: 'transparent',
+    cursor: 'help',
+    pointerEvents: 'auto',
+    '&::after': {
+      content: '""',
+      position: 'absolute',
+      top: '2px',
+      left: '4px',
+      width: '8px',
+      height: '8px',
+      border: '2px solid var(--sw-ink)',
+      opacity: 0
+    },
+    ':focus-visible': {
+      outline: 'none'
+    },
+    '&:focus-visible::after': {
+      opacity: 1
+    }
+  },
+  additionMarker: {
+    position: 'absolute',
+    left: '9px',
+    width: '3px',
+    minHeight: '1px',
+    backgroundColor: 'var(--sw-accent)'
+  },
+  deletionMarker: {
+    position: 'absolute',
+    left: '6px',
+    width: '10px',
+    height: '3px',
+    backgroundColor: 'var(--sw-accent)'
   },
   rail: {
     display: 'grid',
@@ -610,6 +678,8 @@ const useStyles = makeStyles({
   }
 });
 
+const TEXT_SCROLL_DEBOUNCE_MS = 300;
+
 type Props = {
   prompt?: Prompt;
   presets: ModelPreset[];
@@ -620,6 +690,246 @@ type ModelSelection = {
   id: string;
   source: 'none' | 'user' | 'required-default';
 };
+
+type MarkerGeometry = {
+  kind: CompositionMarker['kind'];
+  top: number;
+  height: number;
+  order: number;
+  origins: string[];
+  primaryOrigin?: string;
+};
+
+type PreviewActionToken = {
+  id: number;
+  origin: string;
+};
+
+type MarkerInteraction = {
+  kind: MarkerGeometry['kind'] | 'change';
+  top: number;
+  height: number;
+  order: number;
+  origins: string[];
+  primaryOrigin?: string;
+};
+
+function planMarkerInteractions(geometry: MarkerGeometry[]): MarkerInteraction[] {
+  const interactions: MarkerInteraction[] = [];
+  const candidates = geometry
+    .map((marker) => {
+      const height = Math.max(20, marker.height);
+      return {
+        ...marker,
+        top: Math.max(0, marker.top + (marker.height - height) / 2),
+        height
+      };
+    })
+    .sort((left, right) => left.top - right.top || left.order - right.order);
+  for (const marker of candidates) {
+    const previous = interactions.at(-1);
+    if (previous && marker.top <= previous.top + previous.height) {
+      const bottom = Math.max(previous.top + previous.height, marker.top + marker.height);
+      previous.top = Math.min(previous.top, marker.top);
+      previous.height = bottom - previous.top;
+      previous.kind = previous.kind === marker.kind ? previous.kind : 'change';
+      previous.order = Math.min(previous.order, marker.order);
+      previous.origins = [...new Set([...previous.origins, ...marker.origins])];
+      if (marker.primaryOrigin && previous.origins.includes(marker.primaryOrigin)) {
+        previous.primaryOrigin = marker.primaryOrigin;
+      }
+      continue;
+    }
+    interactions.push({
+      kind: marker.kind,
+      top: marker.top,
+      height: marker.height,
+      order: marker.order,
+      origins: [...marker.origins],
+      primaryOrigin: marker.primaryOrigin
+    });
+  }
+  return interactions;
+}
+
+function controlOriginKey(origin: CompositionControlOrigin): string {
+  return origin.kind === 'variable'
+    ? `variable:${origin.name}`
+    : origin.kind === 'option'
+      ? `option:${origin.id}`
+      : `model:${origin.role}`;
+}
+
+type MarkerBacktrace = {
+  primary: string;
+  related?: string;
+  accessibleName: string;
+};
+
+function conciseMarkerValue(value: string): string {
+  const normalized = value.trim().replace(/\s+/g, ' ');
+  if (!normalized) return 'empty';
+  return normalized.length <= 72 ? normalized : `${normalized.slice(0, 69)}...`;
+}
+
+function markerOriginDescription(
+  prompt: Prompt,
+  origin: string,
+  values: VariableValues,
+  optionValues: OptionValues,
+  modelLabels: { model?: string; rubberDuckModel?: string }
+): { kind: string; label: string; value: string } {
+  if (!origin) return { kind: 'prompt', label: 'Prompt composition', value: 'changed' };
+  const [kind, id] = origin.split(':', 2);
+  if (kind === 'variable') {
+    const variable = prompt.variables.find((candidate) => candidate.name === id);
+    const value = values[id] ?? '';
+    return {
+      kind,
+      label: variable?.label ?? id,
+      value: variable?.choices?.find((choice) => choice.id === value)?.label
+        ?? conciseMarkerValue(value)
+    };
+  }
+  if (kind === 'option') {
+    return {
+      kind,
+      label: prompt.options.find((option) => option.id === id)?.label ?? id,
+      value: optionValues[id] ? 'enabled' : 'disabled'
+    };
+  }
+  if (kind === 'model') {
+    return {
+      kind,
+      label: prompt.modelRoles?.[id as 'model' | 'rubberDuckModel']?.label
+        ?? (id === 'model' ? 'General model' : 'Alternative model'),
+      value: modelLabels[id as 'model' | 'rubberDuckModel'] ?? 'No explicit model'
+    };
+  }
+  return { kind, label: id, value: 'changed' };
+}
+
+function markerBacktrace(
+  prompt: Prompt,
+  marker: MarkerInteraction,
+  values: VariableValues,
+  optionValues: OptionValues,
+  modelLabels: { model?: string; rubberDuckModel?: string }
+): MarkerBacktrace {
+  const primaryOrigin = marker.primaryOrigin && marker.origins.includes(marker.primaryOrigin)
+    ? marker.primaryOrigin
+    : marker.origins.find((origin) => origin.startsWith('option:'))
+      ?? marker.origins.find((origin) => origin.startsWith('variable:'))
+      ?? marker.origins[0];
+  const primary = markerOriginDescription(
+    prompt,
+    primaryOrigin ?? '',
+    values,
+    optionValues,
+    modelLabels
+  );
+  const verb = primary.kind === 'option'
+    ? marker.kind === 'addition' ? 'Added' : marker.kind === 'deletion' ? 'Removed' : 'Changed'
+    : 'Changed';
+  const primaryLine = `${verb} by ${primary.label}: ${primary.value}`;
+  const relatedDescriptions = marker.origins
+    .filter((origin) => origin !== primaryOrigin)
+    .map((origin) => markerOriginDescription(prompt, origin, values, optionValues, modelLabels))
+    .map((origin) => `${origin.label}: ${origin.value}`);
+  const related = relatedDescriptions.length > 0
+    ? `Also affected by ${relatedDescriptions.join(', ')}`
+    : undefined;
+  return {
+    primary: primaryLine,
+    related,
+    accessibleName: `${
+      marker.kind === 'addition'
+        ? 'Addition marker.'
+        : marker.kind === 'deletion'
+          ? 'Deletion marker.'
+          : 'Addition and deletion marker.'
+    } ${related ? `${primaryLine}. ${related}` : primaryLine}`
+  };
+}
+
+function textBoundary(
+  element: HTMLSpanElement,
+  edge: 'start' | 'end',
+  trimWhitespace = false,
+  startOffset = 0,
+  endOffset?: number
+): { node: Text; offset: number } | undefined {
+  const node = element.firstChild;
+  if (!node || node.nodeType !== Node.TEXT_NODE || node.textContent?.length === 0) return undefined;
+  const text = node as Text;
+  const start = Math.max(0, Math.min(startOffset, text.data.length));
+  const end = Math.max(start, Math.min(endOffset ?? text.data.length, text.data.length));
+  if (start === end) return undefined;
+  const value = text.data.slice(start, end);
+  if (edge === 'start') {
+    const offset = value.search(/\S/);
+    if (offset < 0 && trimWhitespace) return undefined;
+    return { node: text, offset: start + (offset >= 0 ? offset : 0) };
+  }
+  const match = /\S(?=\s*$)/.exec(value);
+  if (!match && trimWhitespace) return undefined;
+  return { node: text, offset: start + (match?.index ?? value.length - 1) };
+}
+
+function rangeRectangles(
+  start: { node: Text; offset: number },
+  end: { node: Text; offset: number }
+): DOMRect[] {
+  try {
+    const range = document.createRange();
+    range.setStart(start.node, start.offset);
+    range.setEnd(end.node, Math.min(end.node.data.length, end.offset + 1));
+    return Array.from(range.getClientRects()).filter((rect) =>
+      Number.isFinite(rect.top)
+      && Number.isFinite(rect.bottom)
+      && rect.height > 0
+    );
+  } catch {
+    return [];
+  }
+}
+
+function mergeVerticalRectangles(
+  rectangles: Array<{ top: number; bottom: number }>,
+  maximumGap = 0.5
+): Array<{ top: number; height: number }> {
+  const ordered = rectangles
+    .filter((rect) => Number.isFinite(rect.top) && Number.isFinite(rect.bottom) && rect.bottom > rect.top)
+    .sort((left, right) => left.top - right.top);
+  const merged: Array<{ top: number; bottom: number }> = [];
+  for (const rectangle of ordered) {
+    const previous = merged.at(-1);
+    if (previous && rectangle.top <= previous.bottom + maximumGap) {
+      previous.bottom = Math.max(previous.bottom, rectangle.bottom);
+    } else {
+      merged.push({ ...rectangle });
+    }
+  }
+  return merged.map(({ top, bottom }) => ({ top, height: bottom - top }));
+}
+
+function defaultVariantId(variants: ModelPresetVariant[] | undefined, defaultId: string | undefined): string {
+  return defaultId ?? variants?.[0]?.id ?? '';
+}
+
+function initialModelLabel(
+  presets: ModelPreset[],
+  defaultModelId: string,
+  requirement: ModelRoleRequirement
+): string | undefined {
+  if (requirement !== 'required') return undefined;
+  const preset = presets.find((candidate) => candidate.id === defaultModelId);
+  return composeModelLabel(
+    preset,
+    defaultVariantId(preset?.contexts, preset?.defaultContextId),
+    defaultVariantId(preset?.reasoning, preset?.defaultReasoningId)
+  );
+}
 
 function variantOptionText(variant: ModelPresetVariant, kind: 'context' | 'reasoning'): string {
   const label = variant.label.trim();
@@ -843,6 +1153,58 @@ export function Composer({ prompt, presets, issues }: Props) {
   const [values, setValues] = useState<VariableValues>({});
   const [optionValues, setOptionValues] = useState<OptionValues>({});
   const [feedback, setFeedback] = useState<{ kind: 'success' | 'error'; message: string } | undefined>();
+  const [markerGeometry, setMarkerGeometry] = useState<MarkerGeometry[]>([]);
+  const [typingScrollRequest, setTypingScrollRequest] = useState(0);
+  const markerInteractions = useMemo(() => planMarkerInteractions(markerGeometry), [markerGeometry]);
+  const markerDescriptionId = useId();
+  const previewViewportRef = useRef<HTMLDivElement>(null);
+  const previewContentRef = useRef<HTMLDivElement>(null);
+  const previewTextRef = useRef<HTMLPreElement>(null);
+  const segmentRefs = useRef(new Map<string, HTMLSpanElement>());
+  const measurementFrameRef = useRef<number | undefined>(undefined);
+  const animationFrameRef = useRef<number | undefined>(undefined);
+  const latestActionRef = useRef<PreviewActionToken | undefined>(undefined);
+  const latestInitiatingOriginRef = useRef<string | undefined>(undefined);
+  const actionSequenceRef = useRef(0);
+  const typingScrollTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+
+  const cancelPreviewAnimation = useCallback(() => {
+    if (animationFrameRef.current !== undefined && typeof window.cancelAnimationFrame === 'function') {
+      window.cancelAnimationFrame(animationFrameRef.current);
+    }
+    animationFrameRef.current = undefined;
+  }, []);
+
+  const cancelTypingScroll = useCallback(() => {
+    if (typingScrollTimerRef.current !== undefined) {
+      clearTimeout(typingScrollTimerRef.current);
+    }
+    typingScrollTimerRef.current = undefined;
+  }, []);
+
+  const cancelAutomaticScroll = useCallback(() => {
+    cancelTypingScroll();
+    latestActionRef.current = undefined;
+    cancelPreviewAnimation();
+  }, [cancelPreviewAnimation, cancelTypingScroll]);
+
+  const registerPreviewAction = useCallback((origin: string, targetScroll = true) => {
+    cancelPreviewAnimation();
+    cancelTypingScroll();
+    latestInitiatingOriginRef.current = origin;
+    if (!targetScroll) {
+      latestActionRef.current = undefined;
+      typingScrollTimerRef.current = setTimeout(() => {
+        typingScrollTimerRef.current = undefined;
+        actionSequenceRef.current += 1;
+        latestActionRef.current = { id: actionSequenceRef.current, origin };
+        setTypingScrollRequest((current) => current + 1);
+      }, TEXT_SCROLL_DEBOUNCE_MS);
+      return;
+    }
+    actionSequenceRef.current += 1;
+    latestActionRef.current = { id: actionSequenceRef.current, origin };
+  }, [cancelPreviewAnimation, cancelTypingScroll]);
 
   // Reset when the selected prompt's definition changes, using a stable signature
   // over its key and content. This is stable across a data recompute (a global
@@ -861,6 +1223,11 @@ export function Composer({ prompt, presets, issues }: Props) {
       setOptionValues({});
       setModelSelection({ id: '', source: 'none' });
       setRubberDuckModelSelection({ id: '', source: 'none' });
+      latestActionRef.current = undefined;
+      latestInitiatingOriginRef.current = undefined;
+      setMarkerGeometry([]);
+      cancelTypingScroll();
+      cancelPreviewAnimation();
       return;
     }
     const defaultModelId = prompt.defaultModelId && presets.some((preset) => preset.id === prompt.defaultModelId) ? prompt.defaultModelId : presets[0]?.id ?? '';
@@ -870,8 +1237,31 @@ export function Composer({ prompt, presets, issues }: Props) {
     setOptionValues(normalizeOptionValues(prompt, initialValues, initialOptionValues(prompt.options)));
     setModelSelection(initialModelSelection(initialRequirements.model, defaultModelId));
     setRubberDuckModelSelection(initialModelSelection(initialRequirements.rubberDuckModel, defaultModelId));
+    const initialModelPreset = initialRequirements.model === 'required'
+      ? presets.find((preset) => preset.id === defaultModelId)
+      : undefined;
+    const initialRubberDuckPreset = initialRequirements.rubberDuckModel === 'required'
+      ? presets.find((preset) => preset.id === defaultModelId)
+      : undefined;
+    setModelContextId(initialModelPreset
+      ? defaultVariantId(initialModelPreset.contexts, initialModelPreset.defaultContextId)
+      : '');
+    setModelReasoningId(initialModelPreset
+      ? defaultVariantId(initialModelPreset.reasoning, initialModelPreset.defaultReasoningId)
+      : '');
+    setRubberDuckContextId(initialRubberDuckPreset
+      ? defaultVariantId(initialRubberDuckPreset.contexts, initialRubberDuckPreset.defaultContextId)
+      : '');
+    setRubberDuckReasoningId(initialRubberDuckPreset
+      ? defaultVariantId(initialRubberDuckPreset.reasoning, initialRubberDuckPreset.defaultReasoningId)
+      : '');
     setFeedback(undefined);
-  }, [promptSignature, presetSignature]);
+    latestActionRef.current = undefined;
+    latestInitiatingOriginRef.current = undefined;
+    setMarkerGeometry([]);
+    cancelTypingScroll();
+    cancelPreviewAnimation();
+  }, [cancelPreviewAnimation, cancelTypingScroll, promptSignature, presetSignature]);
 
   const selectedPreset = useMemo(() => presets.find((preset) => preset.id === modelSelection.id), [modelSelection.id, presets]);
   const selectedRubberDuckPreset = useMemo(() => presets.find((preset) => preset.id === rubberDuckModelSelection.id), [rubberDuckModelSelection.id, presets]);
@@ -901,9 +1291,42 @@ export function Composer({ prompt, presets, issues }: Props) {
     [selectedRubberDuckPreset, rubberDuckContextId, rubberDuckReasoningId]
   );
   const composition = useMemo(
-    () => prompt ? composePrompt(prompt, values, { model: modelLabel, rubberDuckModel: rubberDuckLabel }, { validationIssues: issues, optionValues }) : undefined,
+    () => prompt ? composePrompt(prompt, values, { model: modelLabel, rubberDuckModel: rubberDuckLabel }, { validationIssues: issues, optionValues, trace: true }) : undefined,
     [issues, optionValues, prompt, modelLabel, rubberDuckLabel, values]
   );
+  const baselineComposition = useMemo(() => {
+    if (!prompt) return undefined;
+    const initialValues = initialVariableValues(prompt.variables);
+    const initialOptions = normalizeOptionValues(prompt, initialValues, initialOptionValues(prompt.options));
+    const requirements = promptModelRoleRequirements(prompt);
+    const initialDefaultModelId = prompt.defaultModelId && presets.some((preset) => preset.id === prompt.defaultModelId)
+      ? prompt.defaultModelId
+      : presets[0]?.id ?? '';
+    return composePrompt(
+      prompt,
+      initialValues,
+      {
+        model: initialModelLabel(presets, initialDefaultModelId, requirements.model),
+        rubberDuckModel: initialModelLabel(presets, initialDefaultModelId, requirements.rubberDuckModel)
+      },
+      { validationIssues: issues, optionValues: initialOptions, trace: true }
+    );
+  }, [issues, presetSignature, promptSignature]);
+  const markerPlan = useMemo(
+    () => planCompositionMarkers(baselineComposition?.trace, composition?.trace),
+    [baselineComposition, composition]
+  );
+  const currentSegments = composition?.trace?.status === 'available'
+    ? composition.trace.segments
+    : undefined;
+  const segmentRefKeysById = useMemo(() => {
+    const keys = new Map<string, string[]>();
+    for (const [index, segment] of (currentSegments ?? []).entries()) {
+      const key = `${segment.id}:${index}`;
+      keys.set(segment.id, [...(keys.get(segment.id) ?? []), key]);
+    }
+    return keys;
+  }, [currentSegments]);
   const visibleVariables = useMemo(() => {
     if (!prompt) return [];
     if (!composition) return prompt.variables;
@@ -931,8 +1354,257 @@ export function Composer({ prompt, presets, issues }: Props) {
   const modelRequirement = composition?.modelRoleRequirements.model ?? 'inactive';
   const rubberDuckModelRequirement = composition?.modelRoleRequirements.rubberDuckModel ?? 'inactive';
 
+  const measureMarkers = useCallback((): MarkerGeometry[] => {
+    if (markerPlan.status !== 'available') return [];
+    const content = previewContentRef.current;
+    if (!content || typeof document.createRange !== 'function') return [];
+    const contentRect = content.getBoundingClientRect();
+    if (!Number.isFinite(contentRect.top)) return [];
+    const contentHeight = Math.max(content.scrollHeight, contentRect.height);
+    const renderedLineHeight = previewTextRef.current
+      ? Number.parseFloat(getComputedStyle(previewTextRef.current).lineHeight)
+      : Number.NaN;
+    const wrappedLineGap = Number.isFinite(renderedLineHeight)
+      ? Math.max(0.5, renderedLineHeight * 0.45)
+      : 0.5;
+    const geometry: MarkerGeometry[] = [];
+    const elementsForIds = (ids: string[]) => ids.flatMap((id) =>
+      (segmentRefKeysById.get(id) ?? [])
+        .map((key) => segmentRefs.current.get(key))
+        .filter((element): element is HTMLSpanElement => Boolean(element))
+    );
+
+    for (const marker of markerPlan.markers) {
+      const origins = marker.origins.map(controlOriginKey);
+      const primaryOrigin = latestInitiatingOriginRef.current
+        && origins.includes(latestInitiatingOriginRef.current)
+        ? latestInitiatingOriginRef.current
+        : undefined;
+      if (marker.kind === 'addition') {
+        const ranges = marker.currentRanges
+          .map((range) => ({
+            range,
+            element: elementsForIds([range.currentSegmentId])[0]
+          }))
+          .filter((entry): entry is typeof entry & { element: HTMLSpanElement } => Boolean(entry.element));
+        const start = ranges
+          .map(({ element, range }) =>
+            textBoundary(element, 'start', true, range.startOffset, range.endOffset)
+            ?? textBoundary(element, 'start', false, range.startOffset, range.endOffset)
+          )
+          .find((boundary) => boundary !== undefined);
+        const end = [...ranges]
+          .reverse()
+          .map(({ element, range }) =>
+            textBoundary(element, 'end', true, range.startOffset, range.endOffset)
+            ?? textBoundary(element, 'end', false, range.startOffset, range.endOffset)
+          )
+          .find((boundary) => boundary !== undefined);
+        if (!start || !end) continue;
+        const rectangles = rangeRectangles(start, end).map((rect) => ({
+          top: rect.top - contentRect.top,
+          bottom: rect.bottom - contentRect.top
+        }));
+        for (const rectangle of mergeVerticalRectangles(rectangles, wrappedLineGap)) {
+          geometry.push({
+            kind: 'addition',
+            top: rectangle.top,
+            height: rectangle.height,
+            order: marker.order,
+            origins,
+            primaryOrigin
+          });
+        }
+        continue;
+      }
+
+      if (marker.anchor.kind === 'content-start') {
+        geometry.push({
+          kind: 'deletion',
+          top: 0,
+          height: 3,
+          order: marker.order,
+          origins,
+          primaryOrigin
+        });
+        continue;
+      }
+
+      let boundary: { node: Text; offset: number } | undefined;
+      let afterBoundary = false;
+      const element = elementsForIds([marker.anchor.currentSegmentId])[0];
+      const text = element?.textContent ?? '';
+      const length = text.length;
+      const offset = Math.max(0, Math.min(marker.anchor.offset, length));
+      afterBoundary = offset > 0 && (offset === length || /\s/.test(text[offset]));
+      boundary = element
+        ? afterBoundary
+          ? textBoundary(element, 'end', false, offset - 1, offset)
+          : textBoundary(element, 'start', false, offset, Math.min(length, offset + 1))
+        : undefined;
+      if (!boundary) continue;
+      const rectangle = rangeRectangles(boundary, boundary)[0];
+      if (!rectangle) continue;
+      const rawTop = afterBoundary
+        ? rectangle.bottom - contentRect.top - 3
+        : rectangle.top - contentRect.top;
+      geometry.push({
+        kind: 'deletion',
+        top: Math.max(0, Math.min(rawTop, Math.max(0, contentHeight - 3))),
+        height: 3,
+        order: marker.order,
+        origins,
+        primaryOrigin
+      });
+    }
+
+    const additions = geometry.filter((marker) => marker.kind === 'addition');
+    const deletions = geometry
+      .filter((marker) => marker.kind === 'deletion')
+      .sort((left, right) => left.top - right.top || left.order - right.order);
+    const mergedDeletions: MarkerGeometry[] = [];
+    for (const deletion of deletions) {
+      const previous = mergedDeletions.at(-1);
+      if (previous && Math.abs(previous.top - deletion.top) <= 0.5) {
+        previous.order = Math.min(previous.order, deletion.order);
+        previous.origins = [...new Set([...previous.origins, ...deletion.origins])];
+        if (
+          latestInitiatingOriginRef.current
+          && previous.origins.includes(latestInitiatingOriginRef.current)
+        ) {
+          previous.primaryOrigin = latestInitiatingOriginRef.current;
+        }
+      } else {
+        mergedDeletions.push({ ...deletion });
+      }
+    }
+    return [...additions, ...mergedDeletions].sort((left, right) =>
+      left.order - right.order || left.top - right.top
+    );
+  }, [currentSegments, markerPlan, segmentRefKeysById]);
+
+  const scheduleMarkerMeasurement = useCallback(() => {
+    if (typeof window.requestAnimationFrame !== 'function') {
+      setMarkerGeometry([]);
+      return;
+    }
+    if (measurementFrameRef.current !== undefined && typeof window.cancelAnimationFrame === 'function') {
+      window.cancelAnimationFrame(measurementFrameRef.current);
+    }
+    measurementFrameRef.current = window.requestAnimationFrame(() => {
+      measurementFrameRef.current = undefined;
+      setMarkerGeometry(measureMarkers());
+    });
+  }, [measureMarkers]);
+
+  useEffect(() => {
+    let active = true;
+    const viewport = previewViewportRef.current;
+    const text = previewTextRef.current;
+    scheduleMarkerMeasurement();
+
+    const Observer = typeof ResizeObserver === 'function' ? ResizeObserver : undefined;
+    const observer = Observer
+      ? new Observer(() => {
+          if (active) scheduleMarkerMeasurement();
+        })
+      : undefined;
+    if (observer && viewport) observer.observe(viewport);
+    if (observer && text) observer.observe(text);
+
+    const fonts = document.fonts;
+    if (fonts?.ready) {
+      void fonts.ready.then(() => {
+        if (active) scheduleMarkerMeasurement();
+      }).catch(() => undefined);
+    }
+
+    return () => {
+      active = false;
+      observer?.disconnect();
+      if (measurementFrameRef.current !== undefined && typeof window.cancelAnimationFrame === 'function') {
+        window.cancelAnimationFrame(measurementFrameRef.current);
+      }
+      measurementFrameRef.current = undefined;
+    };
+  }, [promptSignature, scheduleMarkerMeasurement]);
+
+  useEffect(() => {
+    if (typingScrollRequest > 0) scheduleMarkerMeasurement();
+  }, [scheduleMarkerMeasurement, typingScrollRequest]);
+
+  useEffect(() => {
+    const token = latestActionRef.current;
+    if (!token) return;
+    latestActionRef.current = undefined;
+    const viewport = previewViewportRef.current;
+    const content = previewContentRef.current;
+    if (!viewport || !content) return;
+
+    const targetMarker = markerGeometry
+      .filter((marker) => marker.origins.includes(token.origin))
+      .sort((left, right) => left.top - right.top || left.order - right.order)[0];
+    if (!targetMarker) return;
+
+    const markerTop = content.offsetTop + targetMarker.top;
+    const markerBottom = markerTop + targetMarker.height;
+    const margin = Math.min(72, Math.max(28, viewport.clientHeight * 0.18));
+    const bandTop = viewport.scrollTop + margin;
+    const bandBottom = viewport.scrollTop + viewport.clientHeight - margin;
+    if (markerTop >= bandTop && markerBottom <= bandBottom) return;
+
+    const maximum = Math.max(0, viewport.scrollHeight - viewport.clientHeight);
+    const target = Math.max(
+      0,
+      Math.min(maximum, markerTop + targetMarker.height / 2 - viewport.clientHeight / 2)
+    );
+    if (Math.abs(target - viewport.scrollTop) < 0.5) return;
+
+    let reducedMotion = false;
+    try {
+      reducedMotion = typeof window.matchMedia === 'function'
+        && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    } catch {
+      reducedMotion = false;
+    }
+    if (reducedMotion || typeof window.requestAnimationFrame !== 'function') {
+      viewport.scrollTop = target;
+      return;
+    }
+
+    cancelPreviewAnimation();
+    const start = viewport.scrollTop;
+    let startedAt: number | undefined;
+    const step = (timestamp: number) => {
+      if (startedAt === undefined) startedAt = timestamp;
+      const progress = Math.min(1, Math.max(0, (timestamp - startedAt) / 220));
+      const eased = 1 - (1 - progress) ** 3;
+      viewport.scrollTop = start + (target - start) * eased;
+      if (progress < 1) {
+        animationFrameRef.current = window.requestAnimationFrame(step);
+      } else {
+        viewport.scrollTop = target;
+        animationFrameRef.current = undefined;
+      }
+    };
+    animationFrameRef.current = window.requestAnimationFrame(step);
+  }, [cancelPreviewAnimation, markerGeometry]);
+
+  useEffect(() => () => {
+    cancelTypingScroll();
+    cancelPreviewAnimation();
+    if (measurementFrameRef.current !== undefined && typeof window.cancelAnimationFrame === 'function') {
+      window.cancelAnimationFrame(measurementFrameRef.current);
+    }
+  }, [cancelPreviewAnimation, cancelTypingScroll]);
+
   function updateVariable(name: string, nextValue: string) {
     if (!prompt) return;
+    const variable = prompt.variables.find((candidate) => candidate.name === name);
+    registerPreviewAction(
+      `variable:${name}`,
+      variable?.control === 'select' || variable?.control === 'slider'
+    );
     const nextValues = { ...values, [name]: nextValue };
     setValues(nextValues);
     setOptionValues((current) => normalizeOptionValues(prompt, nextValues, current));
@@ -1035,13 +1707,100 @@ export function Composer({ prompt, presets, issues }: Props) {
           ) : null}
 
           <section className={styles.previewFrame} aria-label={previewLabel}>
-            <div className={styles.previewHeader}>
+            <div className={styles.previewHeader} data-preview-header>
               <span className={styles.previewLabel}>{previewLabel}</span>
-              <div className={styles.previewMeta}>
-                {charCount > 0 ? <span className={styles.charCount}>{formatCount(charCount, 'char')}</span> : null}
+              {charCount > 0 ? <span className={styles.charCount}>{formatCount(charCount, 'char')}</span> : null}
+            </div>
+            <span id={markerDescriptionId} className={styles.visuallyHidden}>
+              Vertical gutter bars mean additions from the initial prompt; horizontal gutter ticks mean deletions. Hover or focus a marker to trace it to its source control.
+            </span>
+            <div
+              ref={previewViewportRef}
+              className={styles.previewViewport}
+              tabIndex={0}
+              aria-describedby={markerDescriptionId}
+              data-preview-surface
+              onWheel={cancelAutomaticScroll}
+              onTouchStart={cancelAutomaticScroll}
+              onPointerDown={cancelAutomaticScroll}
+              onKeyDown={(event) => {
+                if (['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', ' '].includes(event.key)) {
+                  cancelAutomaticScroll();
+                }
+              }}
+            >
+              <div ref={previewContentRef} className={styles.previewContent} data-preview-content>
+                <pre ref={previewTextRef} className={styles.previewText} data-preview-text>
+                  {currentSegments
+                    ? currentSegments.map((segment, index) => {
+                        const refKey = `${segment.id}:${index}`;
+                        return (
+                          <span
+                            key={refKey}
+                            ref={(element) => {
+                              if (element) segmentRefs.current.set(refKey, element);
+                              else segmentRefs.current.delete(refKey);
+                            }}
+                            data-segment-id={segment.id}
+                          >
+                            {segment.text}
+                          </span>
+                        );
+                      })
+                    : previewText}
+                </pre>
+                <div className={styles.markerLayer} aria-hidden="true" data-marker-layer>
+                  {markerGeometry.map((marker, index) => (
+                    <span
+                      key={`${marker.kind}:${marker.order}:${index}`}
+                      className={marker.kind === 'addition' ? styles.additionMarker : styles.deletionMarker}
+                      data-composition-marker
+                      data-marker-kind={marker.kind}
+                      data-marker-order={marker.order}
+                      style={{ top: `${marker.top}px`, height: `${marker.height}px` }}
+                    />
+                  ))}
+                </div>
+                <div className={styles.markerInteractionLayer} data-marker-interaction-layer>
+                  {markerInteractions.map((marker, index) => {
+                    const backtrace = markerBacktrace(
+                      prompt,
+                      marker,
+                      values,
+                      composition?.effectiveOptionValues ?? {},
+                      { model: modelLabel, rubberDuckModel: rubberDuckLabel }
+                    );
+                    return (
+                      <Tooltip
+                        key={`${marker.kind}:${marker.order}:${index}`}
+                        content={{
+                          children: (
+                            <span>
+                              <span>{backtrace.primary}</span>
+                              {backtrace.related ? <><br /><span>{backtrace.related}</span></> : null}
+                            </span>
+                          ),
+                          className: styles.tooltipContent
+                        }}
+                        relationship="description"
+                        positioning={{ position: 'above', align: 'center', offset: 8 }}
+                        withArrow
+                      >
+                        <button
+                          type="button"
+                          className={styles.markerHitTarget}
+                          aria-label={backtrace.accessibleName}
+                          data-marker-hit-target
+                          data-marker-kind={marker.kind}
+                          data-marker-order={marker.order}
+                          style={{ top: `${marker.top}px`, height: `${marker.height}px` }}
+                        />
+                      </Tooltip>
+                    );
+                  })}
+                </div>
               </div>
             </div>
-            <pre className={styles.preview} tabIndex={0}>{previewText}</pre>
           </section>
         </div>
 
@@ -1079,7 +1838,10 @@ export function Composer({ prompt, presets, issues }: Props) {
                       checked={Boolean(composition?.effectiveOptionValues[option.id])}
                       disabled={!optionState?.enabled}
                       styles={styles}
-                      onChange={(checked) => setOptionValues((current) => ({ ...current, [option.id]: checked }))}
+                      onChange={(checked) => {
+                        registerPreviewAction(`option:${option.id}`);
+                        setOptionValues((current) => ({ ...current, [option.id]: checked }));
+                      }}
                     />
                   );
                 })}
@@ -1106,9 +1868,18 @@ export function Composer({ prompt, presets, issues }: Props) {
                     reasoningId={modelReasoningId}
                     allowOmission={modelRequirement === 'optional'}
                     placeholder="Select a model preset"
-                    onPresetChange={(id) => setModelSelection({ id, source: 'user' })}
-                    onContextChange={setModelContextId}
-                    onReasoningChange={setModelReasoningId}
+                    onPresetChange={(id) => {
+                      registerPreviewAction('model:model');
+                      setModelSelection({ id, source: 'user' });
+                    }}
+                    onContextChange={(id) => {
+                      registerPreviewAction('model:model');
+                      setModelContextId(id);
+                    }}
+                    onReasoningChange={(id) => {
+                      registerPreviewAction('model:model');
+                      setModelReasoningId(id);
+                    }}
                   />
                 ) : null}
                 {usesRubberDuck ? (
@@ -1126,9 +1897,18 @@ export function Composer({ prompt, presets, issues }: Props) {
                     reasoningId={rubberDuckReasoningId}
                     allowOmission={rubberDuckModelRequirement === 'optional'}
                     placeholder="Select an alternative model preset"
-                    onPresetChange={(id) => setRubberDuckModelSelection({ id, source: 'user' })}
-                    onContextChange={setRubberDuckContextId}
-                    onReasoningChange={setRubberDuckReasoningId}
+                    onPresetChange={(id) => {
+                      registerPreviewAction('model:rubberDuckModel');
+                      setRubberDuckModelSelection({ id, source: 'user' });
+                    }}
+                    onContextChange={(id) => {
+                      registerPreviewAction('model:rubberDuckModel');
+                      setRubberDuckContextId(id);
+                    }}
+                    onReasoningChange={(id) => {
+                      registerPreviewAction('model:rubberDuckModel');
+                      setRubberDuckReasoningId(id);
+                    }}
                   />
                 ) : null}
               </div>
@@ -1166,7 +1946,21 @@ export function Composer({ prompt, presets, issues }: Props) {
 
 type ComposerStyles = ReturnType<typeof useStyles>;
 
-function Field({ variable, value, invalid, disabled, styles, onChange }: { variable: PromptVariable; value: string; invalid: boolean; disabled: boolean; styles: ComposerStyles; onChange: (value: string) => void }) {
+function Field({
+  variable,
+  value,
+  invalid,
+  disabled,
+  styles,
+  onChange
+}: {
+  variable: PromptVariable;
+  value: string;
+  invalid: boolean;
+  disabled: boolean;
+  styles: ComposerStyles;
+  onChange: (value: string) => void;
+}) {
   const errorId = useId();
   const choices = variable.choices ?? [];
   return (
@@ -1273,7 +2067,9 @@ function DiscreteSlider({
         disabled={disabled || choices.length < 2}
         onChange={(_, data) => {
           const choice = choices[data.value];
-          if (choice) onChange(choice.id);
+          if (choice) {
+            onChange(choice.id);
+          }
         }}
       />
       <span className={styles.sliderValue}>{selected?.label ?? ''}</span>

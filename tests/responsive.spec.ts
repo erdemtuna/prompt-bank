@@ -97,6 +97,150 @@ for (const transition of [
   });
 }
 
+for (const panelWidth of [707, 708]) {
+  test(`gutter markers preserve Composer geometry and text position at ${panelWidth}px`, async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto(composerFixture);
+    await page.locator('#root').evaluate((root, width) => {
+      root.style.width = `${width + 48}px`;
+      root.style.maxWidth = `${width + 48}px`;
+    }, panelWidth);
+    const measure = () => page.getByRole('region', { name: 'Composed prompt' }).evaluate((region) => {
+      const header = region.querySelector<HTMLElement>('[data-preview-header]');
+      const surface = region.querySelector<HTMLElement>('[data-preview-surface]');
+      const text = region.querySelector<HTMLElement>('[data-preview-text]');
+      const previewColumn = region.parentElement;
+      const workspace = previewColumn?.parentElement;
+      const rail = workspace?.querySelector<HTMLElement>('aside[aria-label="Prompt inputs"]');
+      const firstControl = rail?.querySelector<HTMLElement>('select');
+      if (!header || !surface || !text || !previewColumn || !workspace || !rail || !firstControl) {
+        throw new Error('Composer geometry elements were not found');
+      }
+      const box = (element: Element) => {
+        const value = element.getBoundingClientRect();
+        return { x: value.x, y: value.y + window.scrollY, width: value.width, height: value.height };
+      };
+      return {
+        region: box(region),
+        header: box(header),
+        surface: box(surface),
+        text: box(text),
+        previewColumn: box(previewColumn),
+        workspace: box(workspace),
+        rail: box(rail),
+        firstControl: box(firstControl)
+      };
+    });
+
+    const baselineGeometry = await measure();
+    await page.getByRole('slider', { name: 'Analysis depth' }).press('End');
+    await expect(page.locator('[data-composition-marker]').first()).toBeVisible();
+    const markerGeometry = await measure();
+
+    expect(markerGeometry.region).toEqual(baselineGeometry.region);
+    expect(markerGeometry.header).toEqual(baselineGeometry.header);
+    expect(markerGeometry.surface).toEqual(baselineGeometry.surface);
+    expect(markerGeometry.previewColumn).toEqual(baselineGeometry.previewColumn);
+    expect(markerGeometry.workspace).toEqual(baselineGeometry.workspace);
+    expect(markerGeometry.rail).toEqual(baselineGeometry.rail);
+    expect(markerGeometry.firstControl).toEqual(baselineGeometry.firstControl);
+    expect(markerGeometry.text.x).toBeCloseTo(baselineGeometry.text.x, 1);
+    expect(markerGeometry.text.width).toBeCloseTo(baselineGeometry.text.width, 1);
+
+    await page.locator('[data-preview-surface]').evaluate((surface) => {
+      const height = `${surface.getBoundingClientRect().height}px`;
+      surface.style.height = height;
+      surface.style.minHeight = height;
+      surface.style.maxHeight = height;
+    });
+    const longIntent = 'A deliberately long recovery-flow intent that wraps across several preview lines while retaining exactly the same content column and external panel geometry. '.repeat(4);
+    await page.getByLabel('Intent', { exact: true }).fill(longIntent);
+    const addition = page.locator('[data-composition-marker][data-marker-kind="addition"]').last();
+    await expect(addition).toBeVisible();
+    const gutter = await page.locator('[data-composition-marker][data-marker-kind="addition"]').evaluateAll((markers) => {
+      const groups = new Map<string, Element[]>();
+      for (const marker of markers) {
+        const order = marker.getAttribute('data-marker-order') ?? '';
+        groups.set(order, [...(groups.get(order) ?? []), marker]);
+      }
+      const wrapped = [...groups.values()].reduce((largest, candidates) => {
+        const boxes = candidates.map((candidate) => candidate.getBoundingClientRect());
+        const extent = Math.max(...boxes.map((box) => box.bottom)) - Math.min(...boxes.map((box) => box.top));
+        const largestBoxes = largest.map((candidate) => candidate.getBoundingClientRect());
+        const largestExtent = Math.max(...largestBoxes.map((box) => box.bottom)) - Math.min(...largestBoxes.map((box) => box.top));
+        return extent > largestExtent ? candidates : largest;
+      });
+      const marker = wrapped[0];
+      const markerBox = marker.getBoundingClientRect();
+      const surface = marker.closest<HTMLElement>('[data-preview-surface]');
+      const text = surface?.querySelector<HTMLElement>('[data-preview-text]');
+      const markerCenter = markerBox.top + markerBox.height / 2;
+      const target = [...(surface?.querySelectorAll<HTMLElement>('[data-marker-hit-target]') ?? [])]
+        .find((candidate) => {
+          const box = candidate.getBoundingClientRect();
+          return markerCenter >= box.top && markerCenter <= box.bottom;
+        });
+      if (!surface || !text || !target) throw new Error('Preview marker geometry was not found');
+      const surfaceBox = surface.getBoundingClientRect();
+      const textBox = text.getBoundingClientRect();
+      const targetBox = target.getBoundingClientRect();
+      return {
+        markerLeft: markerBox.left,
+        markerRight: markerBox.right,
+        markerHeight: Math.max(...wrapped.map((candidate) => candidate.getBoundingClientRect().bottom))
+          - Math.min(...wrapped.map((candidate) => candidate.getBoundingClientRect().top)),
+        surfaceLeft: surfaceBox.left,
+        textLeft: textBox.left,
+        targetLeft: targetBox.left,
+        targetRight: targetBox.right,
+        targetWidth: targetBox.width,
+        targetHeight: targetBox.height,
+        lineHeight: Number.parseFloat(getComputedStyle(text).lineHeight)
+      };
+    });
+    expect(gutter.markerLeft).toBeGreaterThanOrEqual(gutter.surfaceLeft + 6);
+    expect(gutter.markerRight).toBeLessThan(gutter.textLeft);
+    expect(gutter.targetLeft).toBeGreaterThanOrEqual(gutter.surfaceLeft);
+    expect(gutter.targetRight).toBeLessThanOrEqual(gutter.textLeft);
+    expect(gutter.targetWidth).toBe(20);
+    expect(gutter.targetHeight).toBeGreaterThanOrEqual(20);
+    expect(gutter.targetHeight).toBeGreaterThanOrEqual(gutter.markerHeight);
+    expect(gutter.markerHeight).toBeGreaterThan(gutter.lineHeight * 1.5);
+  });
+}
+
+for (const width of [320, 390]) {
+  test(`gutter markers stay contained without page overflow at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto(composerFixture);
+    await page.getByLabel('Intent', { exact: true }).fill('A long narrow-screen prompt preview value that creates wrapped addition markers. '.repeat(5));
+    const marker = page.locator('[data-composition-marker][data-marker-kind="addition"]').first();
+    await expect(marker).toBeVisible();
+
+    const geometry = await page.evaluate(() => {
+      const marker = document.querySelector<HTMLElement>('[data-composition-marker][data-marker-kind="addition"]');
+      const surface = document.querySelector<HTMLElement>('[data-preview-surface]');
+      const text = document.querySelector<HTMLElement>('[data-preview-text]');
+      const markerBox = marker?.getBoundingClientRect();
+      const surfaceBox = surface?.getBoundingClientRect();
+      const textBox = text?.getBoundingClientRect();
+      return {
+      overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+        surface: surfaceBox?.width ?? 0,
+        viewport: document.documentElement.clientWidth,
+        markerLeft: markerBox?.left ?? 0,
+        markerRight: markerBox?.right ?? 0,
+        surfaceLeft: surfaceBox?.left ?? 0,
+        textLeft: textBox?.left ?? 0
+      };
+    });
+    expect(geometry.overflow, `horizontal overflow of ${geometry.overflow}px at ${width}px`).toBeLessThanOrEqual(1);
+    expect(geometry.surface).toBeLessThanOrEqual(geometry.viewport);
+    expect(geometry.markerLeft).toBeGreaterThanOrEqual(geometry.surfaceLeft + 6);
+    expect(geometry.markerRight).toBeLessThan(geometry.textLeft);
+  });
+}
+
 for (const viewport of [
   { width: 1200, height: 820 },
   { width: 1360, height: 900 },

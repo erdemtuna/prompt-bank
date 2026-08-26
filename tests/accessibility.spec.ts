@@ -199,3 +199,128 @@ test('conditional and disabled Composer states have no serious or critical viola
   const summary = blocking.map((v) => ({ id: v.id, impact: v.impact, nodes: v.nodes.length }));
   expect(summary, JSON.stringify(summary, null, 2)).toEqual([]);
 });
+
+test('gutter marker semantics are static, hidden, focus-safe, reduced-motion-safe, and Axe clean', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.goto(composerFixture);
+  const region = page.getByRole('region', { name: 'Composed prompt' });
+  const surface = region.locator('[data-preview-surface]');
+  const description = 'Vertical gutter bars mean additions from the initial prompt; horizontal gutter ticks mean deletions. Hover or focus a marker to trace it to its source control.';
+  await expect(surface).toHaveAccessibleDescription(description);
+  await expect(region.getByText(description)).toHaveCSS('clip', 'rect(0px, 0px, 0px, 0px)');
+  await expect(region.locator('[aria-live]')).toHaveCount(0);
+
+  await surface.evaluate((element) => {
+    element.style.height = '150px';
+    element.style.minHeight = '150px';
+    element.style.maxHeight = '150px';
+    element.scrollTop = 0;
+  });
+  const apiFlow = page.getByRole('checkbox', { name: 'API / data-flow diagram' });
+  await apiFlow.focus();
+  await apiFlow.uncheck({ force: true });
+  await expect(apiFlow).toBeFocused();
+  const markerLayer = region.locator('[data-marker-layer]');
+  await expect(markerLayer).toHaveAttribute('aria-hidden', 'true');
+  await expect(markerLayer.locator('[data-composition-marker]')).not.toHaveCount(0);
+  const markerTarget = region.locator('[data-marker-hit-target]').first();
+  await expect(markerTarget).toHaveAccessibleName(/Removed by API \/ data-flow diagram: disabled/);
+  await markerTarget.focus();
+  await expect(markerTarget).toBeFocused();
+  await expect(page.getByRole('tooltip')).toContainText('Removed by API / data-flow diagram: disabled');
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('tooltip')).toHaveCount(0);
+  await expect.poll(() => surface.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+  const firstPosition = await surface.evaluate((element) => element.scrollTop);
+  await page.evaluate(() => new Promise<void>((resolve) =>
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+  ));
+  expect(await surface.evaluate((element) => element.scrollTop)).toBe(firstPosition);
+  await expect(page.getByText(/impact|affected text|modified/i)).toHaveCount(0);
+
+  const results = await new AxeBuilder({ page }).analyze();
+  const blocking = results.violations.filter((v) => v.impact === 'serious' || v.impact === 'critical');
+  const summary = blocking.map((v) => ({ id: v.id, impact: v.impact, nodes: v.nodes.length }));
+  expect(summary, JSON.stringify(summary, null, 2)).toEqual([]);
+});
+
+test('preview-only scrolling animates over frames, settles, and becomes immediate for reduced motion', async ({ page }) => {
+  await page.goto(composerFixture);
+  const region = page.getByRole('region', { name: 'Composed prompt' });
+  const surface = region.locator('[data-preview-surface]');
+  const rail = page.locator('aside[aria-label="Prompt inputs"]');
+  const apiFlow = page.getByRole('checkbox', { name: 'API / data-flow diagram' });
+  await surface.evaluate((element) => {
+    element.style.height = '150px';
+    element.style.minHeight = '150px';
+    element.style.maxHeight = '150px';
+    element.scrollTop = 0;
+  });
+  const before = {
+    page: await page.evaluate(() => window.scrollY),
+    rail: await rail.evaluate((element) => element.scrollTop)
+  };
+  await page.evaluate(() => {
+    const values: number[] = [];
+    const surface = document.querySelector<HTMLElement>('[data-preview-surface]');
+    (window as typeof window & { __previewSamples?: number[] }).__previewSamples = values;
+    const sample = () => {
+      values.push(surface?.scrollTop ?? 0);
+      if (values.length < 40) requestAnimationFrame(sample);
+    };
+    requestAnimationFrame(sample);
+  });
+  await apiFlow.uncheck({ force: true });
+  await expect(region.locator('[data-marker-kind="deletion"]')).not.toHaveCount(0);
+  await page.waitForTimeout(360);
+
+  const motion = await page.evaluate(() => {
+    const values = (window as typeof window & { __previewSamples?: number[] }).__previewSamples ?? [];
+    const positive = values.filter((value) => value > 0);
+    return {
+      positive,
+      distinct: [...new Set(positive.map((value) => Math.round(value * 10) / 10))]
+    };
+  });
+  expect(motion.distinct.length).toBeGreaterThan(2);
+  const settled = await surface.evaluate((element) => element.scrollTop);
+  expect(settled).toBeGreaterThan(0);
+  const target = await surface.evaluate((element) => {
+    const content = element.querySelector<HTMLElement>('[data-preview-content]');
+    const marker = element.querySelector<HTMLElement>('[data-marker-kind="deletion"]');
+    if (!content || !marker) throw new Error('Deletion marker target was not found');
+    const markerTop = content.offsetTop + Number.parseFloat(marker.style.top);
+    const markerHeight = Number.parseFloat(marker.style.height);
+    return Math.max(
+      0,
+      Math.min(
+        element.scrollHeight - element.clientHeight,
+        markerTop + markerHeight / 2 - element.clientHeight / 2
+      )
+    );
+  });
+  expect(settled).toBeCloseTo(target, 1);
+  await page.evaluate(() => new Promise<void>((resolve) =>
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+  ));
+  expect(await surface.evaluate((element) => element.scrollTop)).toBeCloseTo(settled, 1);
+  expect(await page.evaluate(() => window.scrollY)).toBe(before.page);
+  expect(await rail.evaluate((element) => element.scrollTop)).toBe(before.rail);
+
+  await apiFlow.check({ force: true });
+  await expect(region.locator('[data-composition-marker]')).toHaveCount(0);
+  await surface.evaluate((element) => {
+    element.scrollTop = 0;
+  });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await apiFlow.uncheck({ force: true });
+  await expect(region.locator('[data-marker-kind="deletion"]')).not.toHaveCount(0);
+  const immediate = await surface.evaluate((element) => element.scrollTop);
+  expect(immediate).toBeGreaterThan(0);
+  await page.evaluate(() => new Promise<void>((resolve) =>
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+  ));
+  expect(await surface.evaluate((element) => element.scrollTop)).toBe(immediate);
+  expect(await page.evaluate(() => window.scrollY)).toBe(before.page);
+  expect(await rail.evaluate((element) => element.scrollTop)).toBe(before.rail);
+});
