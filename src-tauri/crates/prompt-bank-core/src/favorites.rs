@@ -218,6 +218,27 @@ pub fn read_favorites(root: &Path) -> Result<FavoriteSnapshot, FavoritesError> {
     decode_favorites(&bytes)
 }
 
+struct FavoriteLock {
+    file: File,
+    locked: bool,
+}
+
+impl FavoriteLock {
+    fn release(&mut self) -> Result<(), FavoritesError> {
+        FileExt::unlock(&self.file).map_err(io)?;
+        self.locked = false;
+        Ok(())
+    }
+}
+
+impl Drop for FavoriteLock {
+    fn drop(&mut self) {
+        if self.locked {
+            let _ = FileExt::unlock(&self.file);
+        }
+    }
+}
+
 pub fn set_favorite(
     root: &Path,
     reference: PromptReference,
@@ -225,6 +246,7 @@ pub fn set_favorite(
 ) -> Result<FavoriteSnapshot, FavoritesError> {
     reference.validate()?;
     let root = validate_root(root, true)?.ok_or(FavoritesError::InvalidData)?;
+    regular_file(&root.join(FAVORITES_FILE))?;
     let lock_path = root.join(FAVORITES_LOCK);
     regular_file(&lock_path)?;
     // Keep the lock on a stable file; atomic replacement changes the JSON file's inode.
@@ -243,7 +265,19 @@ pub fn set_favorite(
             io(error)
         }
     })?;
-    let mut snapshot = read_favorites(&root)?;
+    let mut guard = FavoriteLock { file: lock, locked: true };
+    let result = update_locked_favorite(&root, reference, favorite);
+    // Explicit unlock also releases Unix locks shared with descriptors inherited by a child.
+    guard.release()?;
+    result
+}
+
+fn update_locked_favorite(
+    root: &Path,
+    reference: PromptReference,
+    favorite: bool,
+) -> Result<FavoriteSnapshot, FavoritesError> {
+    let mut snapshot = read_favorites(root)?;
     let present = snapshot.favorites.contains(&reference);
     if present == favorite {
         return Ok(snapshot);

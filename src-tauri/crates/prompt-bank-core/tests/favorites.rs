@@ -242,6 +242,7 @@ fn rejects_symlinked_roots_data_and_locks() {
     symlink(&outside, real.join(FAVORITES_FILE)).unwrap();
     assert!(read_favorites(&real).is_err());
     assert!(set_favorite(&real, reference(FavoriteSource::Builtin, None, "a"), true).is_err());
+    assert!(!real.join(".favorites.lock").exists());
     fs::remove_file(real.join(FAVORITES_FILE)).unwrap();
     symlink(&outside, real.join(".favorites.lock")).unwrap();
     assert!(set_favorite(&real, reference(FavoriteSource::Builtin, None, "a"), true).is_err());
