@@ -15,6 +15,8 @@ See `docs/authoring.md` for a walkthrough and `schema.md` for the full contract.
 
 ## Application
 
+See the [development guide](docs/development.md) for local setup, platform prerequisites, and build commands.
+
 - Follow the existing patterns and the Fluent based design. Do not add new UI primitives, colors, or icons without a clear reason.
 - Run `npm run check`, which validates, tests, and builds. For interface changes, also run `npm run e2e`.
 - Keep the interface keyboard reachable and accessible.
