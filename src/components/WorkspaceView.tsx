@@ -4,6 +4,9 @@ import { Composer } from './Composer';
 import { PromptLibrary } from './PromptLibrary';
 import { compareCategoriesForLibrary } from '../data/loaders';
 import type { AppData } from '../data/loaders';
+import { favoriteKey, promptReference } from '../data/favorites';
+import type { FavoritesView } from '../hooks/useFavorites';
+import type { Prompt } from '../data/schemas';
 
 const sourceOrder = ['builtin', 'global', 'folder'] as const;
 
@@ -69,6 +72,11 @@ type Props = {
   category: string;
   sourceFilter: string;
   selectedPromptKey?: string;
+  workspaceId: string | null;
+  workspaceLabel: string;
+  favorites: FavoritesView;
+  favoritesOnly: boolean;
+  onFavoritesChange: (value: boolean) => void;
   onSearchChange: (value: string) => void;
   onCategoryChange: (value: string) => void;
   onSourceChange: (value: string) => void;
@@ -81,6 +89,11 @@ export function WorkspaceView({
   category,
   sourceFilter,
   selectedPromptKey,
+  workspaceId,
+  workspaceLabel,
+  favorites,
+  favoritesOnly,
+  onFavoritesChange,
   onSearchChange,
   onCategoryChange,
   onSourceChange,
@@ -114,6 +127,7 @@ export function WorkspaceView({
   const effectiveSourceFilter =
     sourceFilter === 'all' || availableSources.some((source) => source === sourceFilter) ? sourceFilter : 'all';
   const effectiveCategory = category === 'all' || categories.some((item) => item === category) ? category : 'all';
+  const referenceFor = (prompt: Prompt) => promptReference(prompt, workspaceId);
 
   const filteredPrompts = useMemo(() => {
     const query = search.trim().toLocaleLowerCase();
@@ -126,20 +140,22 @@ export function WorkspaceView({
           .join(' ')
           .toLocaleLowerCase()
           .includes(query);
-      return categoryMatches && sourceMatches && searchMatches;
+      const favoriteMatches = !favoritesOnly || favorites.keys.has(favoriteKey(referenceFor(prompt)));
+      return categoryMatches && sourceMatches && searchMatches && favoriteMatches;
     });
-  }, [data.prompts, effectiveCategory, effectiveSourceFilter, search]);
+  }, [data.prompts, effectiveCategory, effectiveSourceFilter, search, favoritesOnly, favorites.keys, workspaceId]);
 
   const selectedPrompt = data.prompts.find((prompt) => prompt.key === selectedPromptKey) ?? data.prompts[0];
   const selectedPromptIsVisible = Boolean(
     selectedPrompt && filteredPrompts.some((prompt) => prompt.key === selectedPrompt.key)
   );
-  const filtersAreActive = Boolean(search.trim()) || effectiveCategory !== 'all' || effectiveSourceFilter !== 'all';
+  const filtersAreActive = Boolean(search.trim()) || effectiveCategory !== 'all' || effectiveSourceFilter !== 'all' || favoritesOnly;
 
   function clearFilters() {
     onSearchChange('');
     onCategoryChange('all');
     onSourceChange('all');
+    onFavoritesChange(false);
   }
 
   function showSelectedPrompt() {
@@ -147,6 +163,7 @@ export function WorkspaceView({
     onSearchChange('');
     onSourceChange('all');
     onCategoryChange(selectedPrompt.category);
+    onFavoritesChange(false);
   }
 
   return (
@@ -162,6 +179,31 @@ export function WorkspaceView({
         showSourceFilter={showSourceFilter}
         totalPromptCount={data.prompts.length}
         selectedPromptHidden={Boolean(selectedPrompt && !selectedPromptIsVisible && filtersAreActive)}
+        favoritesOnly={favoritesOnly}
+        favoritesLoading={favorites.loadState === 'loading'}
+        favoriteState={(prompt) => {
+          const key = favoriteKey(referenceFor(prompt));
+          const change = favorites.changes.get(key);
+          return {
+            favorite: favorites.keys.has(key),
+            unsaved: change?.status === 'failed',
+            pending: change?.status === 'queued' || change?.status === 'saving'
+          };
+        }}
+        onFavoritesChange={onFavoritesChange}
+        onToggleFavorite={(prompt, origin) => {
+          const reference = referenceFor(prompt);
+          favorites.set({
+            reference, favorite: !favorites.keys.has(favoriteKey(reference)),
+            title: prompt.title,
+            sourceLabel: prompt.source === 'folder' ? `Folder: ${workspaceLabel}` : prompt.sourceLabel,
+            restoreFocus: () => {
+              if (origin.isConnected && origin.getClientRects().length > 0) origin.focus();
+              else document.getElementById('pb-search')?.focus();
+            }
+          });
+        }}
+        onRetryFavorite={(prompt) => { void favorites.retry(favoriteKey(referenceFor(prompt))); }}
         onSearchChange={onSearchChange}
         onCategoryChange={onCategoryChange}
         onSourceChange={onSourceChange}
@@ -199,7 +241,7 @@ export function WorkspaceView({
                   visible in the index again.
                 </Text>
                 <div className={styles.noticeActions}>
-                  <Button appearance="primary" onClick={clearFilters}>
+                  <Button appearance="secondary" onClick={clearFilters}>
                     Clear filters
                   </Button>
                   <Button onClick={showSelectedPrompt}>Show selected</Button>

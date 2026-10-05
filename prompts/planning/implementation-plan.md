@@ -3,7 +3,7 @@ id: implementation-plan
 title: Implementation Plan
 category: planning
 description: Turn an agreed goal into the smallest dependency-correct plan with appropriate checks.
-model_default: gpt-5-6-sol
+model_default: gpt-6-1-sol
 model_roles:
   model:
     label: Approved execution model

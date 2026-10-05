@@ -1,6 +1,7 @@
 use serde::Serialize;
 
 use crate::errors::PromptFsError;
+use crate::favorites::FavoritesError;
 use crate::prompt_fs::PromptFile;
 use crate::registry::WorkspaceRecord;
 
@@ -60,5 +61,11 @@ impl CommandError {
 impl From<PromptFsError> for CommandError {
     fn from(err: PromptFsError) -> Self {
         CommandError { kind: err.kind().to_string(), message: err.user_message().to_string() }
+    }
+}
+
+impl From<FavoritesError> for CommandError {
+    fn from(error: FavoritesError) -> Self {
+        CommandError::new(error.kind(), error.user_message())
     }
 }

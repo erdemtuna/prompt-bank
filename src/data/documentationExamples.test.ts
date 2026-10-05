@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { parsePromptFile } from './schemas';
 
-const documents = ['../../schema.md', '../../docs/authoring.md', '../../README.md'];
+const documents = ['../../schema.md', '../../docs/authoring.md', '../../docs/usage.md'];
 
 describe('prompt documentation examples', () => {
   it.each(documents)('parses every complete prompt example in %s', (relativePath) => {

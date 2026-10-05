@@ -105,6 +105,10 @@ const variableNamePattern = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const builtInPlaceholders = new Set(['model', 'rubberDuckModel']);
 const reservedOptionIds = new Set([...builtInPlaceholders, 'allOptionsDisabled']);
 
+export function isKebabCaseId(value: string): boolean {
+  return slugPattern.test(value);
+}
+
 const frontmatterSchema = z.object({
   id: nonEmpty,
   title: z.string().optional(),

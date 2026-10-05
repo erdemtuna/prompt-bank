@@ -49,6 +49,12 @@ function renderLibrary(props: Partial<ComponentProps<typeof PromptLibrary>> = {}
     showSourceFilter: true,
     totalPromptCount: prompts.length,
     selectedPromptHidden: false,
+    favoritesOnly: false,
+    favoritesLoading: false,
+    favoriteState: () => ({ favorite: false, unsaved: false, pending: false }),
+    onFavoritesChange: noop,
+    onToggleFavorite: noop,
+    onRetryFavorite: noop,
     onSearchChange: noop,
     onCategoryChange: noop,
     onSourceChange: noop,
@@ -92,7 +98,57 @@ describe('PromptLibrary source filter', () => {
     });
 
     expect(screen.queryByRole('group', { name: 'Filter by source' })).toBeNull();
-    expect(screen.getByRole('button', { name: /Only Built in/ })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /^Only Built in/ })).toBeTruthy();
+  });
+
+  describe('PromptLibrary favorites controls', () => {
+    it('renders sibling controls and never selects a prompt when its star is clicked', () => {
+      const selected = vi.fn();
+      const toggled = vi.fn();
+      renderLibrary({ onSelectPrompt: selected, onToggleFavorite: toggled });
+      const star = screen.getByRole('button', { name: 'Add Built in A to favorites (Built in)' });
+      fireEvent.click(star);
+      expect(toggled).toHaveBeenCalledOnce();
+      expect(selected).not.toHaveBeenCalled();
+      expect(star.parentElement?.closest('button')).toBeNull();
+      expect(star.getAttribute('aria-pressed')).toBe('false');
+    });
+
+    it('keeps filter and star state programmatically named and exposes retry after dismissal', () => {
+      const filters = vi.fn();
+      const retry = vi.fn();
+      renderLibrary({
+        favoritesOnly: true,
+        favoriteState: () => ({ favorite: true, unsaved: true, pending: false }),
+        onFavoritesChange: filters,
+        onRetryFavorite: retry
+      });
+      const filter = screen.getByRole('button', { name: 'Favorites' });
+      expect(filter.getAttribute('aria-pressed')).toBe('true');
+      fireEvent.click(filter);
+      expect(filters).toHaveBeenCalledWith(false);
+      expect(screen.getAllByText('Not saved')).toHaveLength(2);
+      fireEvent.click(screen.getAllByRole('button', { name: 'Retry' })[0]);
+      expect(retry).toHaveBeenCalledOnce();
+    });
+
+    it('moves focus to a remaining row before unfavoriting hides the focused one', () => {
+      renderLibrary({
+        favoritesOnly: true,
+        favoriteState: () => ({ favorite: true, unsaved: false, pending: false })
+      });
+      const star = screen.getByRole('button', { name: 'Remove Built in A from favorites (Built in)' });
+      star.focus();
+      fireEvent.click(star);
+      expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Global B, Global' }));
+    });
+
+    it('leaves selection usable while initial favorite storage is loading', () => {
+      renderLibrary({ favoritesLoading: true });
+      expect(screen.getByRole('button', { name: 'Favorites' }).hasAttribute('disabled')).toBe(true);
+      expect(screen.getByRole('button', { name: 'Add Built in A to favorites (Built in)' }).hasAttribute('disabled')).toBe(true);
+      expect(screen.getByRole('button', { name: 'Built in A, Built in, selected' }).hasAttribute('disabled')).toBe(false);
+    });
   });
 
   it('reports a filtered summary when filtering only by source', () => {

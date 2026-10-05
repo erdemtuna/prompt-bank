@@ -4,6 +4,9 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { EmptyPrompts } from './components/EmptyPrompts';
 import { WorkspaceTabs } from './components/WorkspaceTabs';
 import { WorkspaceView } from './components/WorkspaceView';
+import { FavoritesFeedback } from './components/FavoritesFeedback';
+import { createFavoritesStorage } from './data/favoritesStorage';
+import { useFavorites } from './hooks/useFavorites';
 import { builtinPresetsRaw, builtinPromptSources, resolvePromptsForApp, type PromptSourceInput } from './data/loaders';
 import {
   getAppVersion,
@@ -217,6 +220,9 @@ const LIBRARY_TAB: Tab = { id: 'library', kind: 'library', label: 'Library', sta
 export default function App() {
   const styles = useStyles();
   const desktop = isDesktop();
+  const favoritesStorage = useMemo(createFavoritesStorage, [desktop]);
+  const favorites = useFavorites(favoritesStorage);
+  const [favoritesOnly, setFavoritesOnly] = useState(false);
 
   const [globalSource, setGlobalSource] = useState<PromptSourceInput | null>(null);
   const [tabs, setTabs] = useState<Tab[]>([LIBRARY_TAB]);
@@ -347,6 +353,7 @@ export default function App() {
     setRefreshing(true);
     setNotice(null);
     const work: Promise<unknown>[] = [
+      favorites.reload(),
       readGlobalPrompts()
         .then((source) => setGlobalSource(source))
         .catch((error) => setNotice(`Global prompts could not reload: ${toCommandError(error).message}`))
@@ -491,6 +498,11 @@ export default function App() {
             category={category}
             sourceFilter={sourceFilter}
             selectedPromptKey={activeTab.selectedKey}
+            workspaceId={activeTab.kind === 'folder' ? activeTab.id : null}
+            workspaceLabel={activeTab.label}
+            favorites={favorites}
+            favoritesOnly={favoritesOnly}
+            onFavoritesChange={setFavoritesOnly}
             onSearchChange={setSearch}
             onCategoryChange={setCategory}
             onSourceChange={setSourceFilter}
@@ -498,6 +510,7 @@ export default function App() {
           />
         )}
       </main>
+      <FavoritesFeedback failures={favorites.failures} onRetry={favorites.retry} onDismiss={favorites.dismiss} />
       </div>
     </FluentProvider>
   );

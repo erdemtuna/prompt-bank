@@ -20,6 +20,8 @@ async function mockDesktopWithChangingGlobal(page: Page) {
         switch (cmd) {
           case 'plugin:app|version':
             return Promise.resolve('9.8.7');
+          case 'read_favorites':
+            return Promise.resolve({ version: 1, favorites: [] });
           case 'read_global_prompts':
             return Promise.resolve({ files: secondExists ? [one, two] : [one] });
           case 'list_workspaces':
@@ -37,7 +39,7 @@ async function mockDesktopWithChangingGlobal(page: Page) {
 test('Ctrl+K focuses the index search from anywhere in the app', async ({ page }) => {
   await page.goto('/');
   await expect(
-    page.getByRole('region', { name: 'Prompt library' }).getByRole('button', { name: 'Review a Pull Request' })
+    page.getByRole('region', { name: 'Prompt library' }).getByRole('button', { name: /^Review a Pull Request(?:, selected)?$/ })
   ).toBeVisible();
 
   const search = page.getByLabel('Search prompts');
@@ -49,12 +51,12 @@ test('Ctrl+K focuses the index search from anywhere in the app', async ({ page }
 
   await expect(search).toBeFocused();
   await search.fill('worktree');
-  await expect(page.getByRole('button', { name: 'New Worktree' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'New Worktree', exact: true })).toBeVisible();
 });
 
 test('Ctrl+Enter copies the composed prompt without touching the button', async ({ page }) => {
   await page.goto('/');
-  await page.getByRole('button', { name: 'Refactor Code' }).click();
+  await page.getByRole('button', { name: 'Refactor Code', exact: true }).click();
 
   const sentinel = 'src/data/loaders.ts';
   await page.getByLabel('target', { exact: true }).fill(sentinel);
@@ -70,7 +72,7 @@ test('Ctrl+Enter copies the composed prompt without touching the button', async 
 
 test('Ctrl+Enter reports why copying is blocked instead of copying nothing', async ({ page }) => {
   await page.goto('/');
-  await page.getByRole('button', { name: 'Refactor Code' }).click();
+  await page.getByRole('button', { name: 'Refactor Code', exact: true }).click();
 
   // The always-on "Copy disabled — ..." line already names the missing
   // variable, so the reason alone proves nothing. The shortcut has to raise a
@@ -88,7 +90,7 @@ test('Ctrl+Enter reports why copying is blocked instead of copying nothing', asy
 test('the shortcut hints are visible so the shortcuts are discoverable', async ({ page }) => {
   await page.goto('/');
   await expect(
-    page.getByRole('region', { name: 'Prompt library' }).getByRole('button', { name: 'Review a Pull Request' })
+    page.getByRole('region', { name: 'Prompt library' }).getByRole('button', { name: /^Review a Pull Request(?:, selected)?$/ })
   ).toBeVisible();
 
   // The hint follows the host platform, so the expectation has to as well or
@@ -121,6 +123,8 @@ test('the empty state explains where prompts go and offers a working example', a
         switch (cmd) {
           case 'plugin:app|version':
             return Promise.resolve('9.8.7');
+          case 'read_favorites':
+            return Promise.resolve({ version: 1, favorites: [] });
           case 'read_global_prompts':
             return Promise.resolve({ files: [] });
           case 'list_workspaces':

@@ -200,7 +200,7 @@ test('context and reasoning selectors refine the composed model label', async ({
   await expect.poll(() => surface.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
   await context.selectOption('1m');
   const reasoning = generalGroup.getByRole('combobox', { name: 'General model reasoning', exact: true });
-  await expect(reasoning.locator('option')).toHaveText(['no', 'minimal', 'low', 'medium', 'high', 'extra high', 'max']);
+  await expect(reasoning.locator('option')).toHaveText(['no', 'low', 'medium', 'high', 'extra high', 'max']);
   await reasoning.selectOption('max');
   await expect(preview).toContainText('Perform the primary review using GPT-5.6 Terra 1M context max reasoning');
   await expect(preview.locator(

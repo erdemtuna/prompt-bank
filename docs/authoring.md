@@ -193,6 +193,8 @@ A conditional block tag that sits on its own line is treated as a control line a
 
 Two built in placeholders insert a descriptive model label chosen in the interface. Use `{{model}}` for the general model and `{{rubberDuckModel}}` for an alternative or reviewer model. Do not declare variables named `model` or `rubberDuckModel`. A direct placeholder is required. Set `model_default` to a preset id from `model-presets.yaml` to preselect required roles.
 
+The built-ins explicitly default required roles to GPT-6.1 Sol. Older preset IDs remain valid, including GPT-5.6 Sol and Terra. Private prompts keep their own explicit defaults; when no default is declared, the existing first-preset fallback remains. Reasoning choices are preset-specific descriptive guidance, not universal provider parameters.
+
 When a preset declares `contexts`, the interface shows a Context dropdown beside that model; when it declares `reasoning`, the interface shows a Reasoning dropdown. The interface folds the declared choices into the same placeholder, so a prompt written as `{{model}}` can copy as `GPT-5.6 Terra 1M context medium reasoning` without any change to the template. The declared choice order, defaults, and preset YAML format are unchanged. See `schema.md` for the preset format.
 
 To leave model choice to Copilot CLI by default, wrap only the descriptor and its connector in a model fragment:
@@ -212,7 +214,7 @@ id: plan-example
 title: Plan Example
 category: planning
 description: Demonstrates the model placeholder
-model_default: gpt-5-6-sol
+model_default: gpt-6-1-sol
 model_roles:
   model:
     label: Approved execution model

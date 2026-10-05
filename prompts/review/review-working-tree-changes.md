@@ -3,7 +3,7 @@ id: review-working-tree-changes
 title: Review Working Tree Changes
 category: review
 description: Review the changes you have made so far, before they become a commit or a pull request.
-model_default: gpt-5-6-sol
+model_default: gpt-6-1-sol
 variables:
   - name: context
     description: What changed, why, and any files or risk areas to weight

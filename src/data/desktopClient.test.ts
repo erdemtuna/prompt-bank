@@ -4,6 +4,8 @@ import { clearMocks, mockIPC } from '@tauri-apps/api/mocks';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   getAppVersion,
+  readFavorites,
+  setFavorite,
   isDesktop,
   listWorkspaces,
   openWorkspace,
@@ -29,6 +31,25 @@ afterEach(() => {
 });
 
 describe('desktopClient', () => {
+  it('invokes the narrow favorite commands and validates their snapshots', async () => {
+    const reference = { source: 'builtin', workspaceId: null, promptId: 'test' } as const;
+    mockIPC((cmd, args) => {
+      if (cmd === 'read_favorites') return { version: 1, favorites: [] };
+      if (cmd === 'set_favorite') {
+        expect(args).toEqual({ reference, favorite: true });
+        return { version: 1, favorites: [reference] };
+      }
+      throw new Error(`unexpected command ${cmd}`);
+    });
+    expect((await readFavorites()).favorites).toEqual([]);
+    expect((await setFavorite({ reference, favorite: true })).favorites).toEqual([reference]);
+  });
+
+  it('does not accept malformed native favorites as an empty success', async () => {
+    mockIPC(() => null);
+    await expect(readFavorites()).rejects.toMatchObject({ kind: 'invalid_favorite' });
+  });
+
   it('reports desktop only when the Tauri internals are present', () => {
     expect(isDesktop()).toBe(false);
     mockIPC(() => undefined);

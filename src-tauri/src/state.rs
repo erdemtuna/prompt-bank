@@ -6,11 +6,15 @@ use std::sync::Mutex;
 /// traversal, or IPC serialization.
 pub struct AppState {
     pub registry_lock: Mutex<()>,
+    pub favorites_lock: Mutex<()>,
 }
 
 impl AppState {
     pub fn new() -> Self {
-        Self { registry_lock: Mutex::new(()) }
+        Self {
+            registry_lock: Mutex::new(()),
+            favorites_lock: Mutex::new(()),
+        }
     }
 }
 

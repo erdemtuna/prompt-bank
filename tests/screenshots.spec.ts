@@ -3,6 +3,37 @@ import { test, expect } from '@playwright/test';
 const fontsReady = () => (document as unknown as { fonts: { ready: Promise<unknown> } }).fonts.ready;
 const composerFixture = '/tests/fixtures/composer.html';
 
+for (const width of [1440, 390]) {
+  test(`captures the favorites library at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto('/');
+    await page.getByRole('button', { name: 'Add Investigate a Topic to favorites (Built in)' }).click();
+    await expect(page.getByRole('button', { name: 'Remove Investigate a Topic from favorites (Built in)' })).toHaveAttribute('aria-busy', 'false');
+    await page.getByRole('button', { name: 'Favorites', exact: true }).click();
+    await page.getByRole('button', { name: 'Investigate a Topic', exact: true }).click();
+    await page.evaluate(fontsReady);
+    await expect(page).toHaveScreenshot(`favorites-library-${width}.png`, { animations: 'disabled', fullPage: true });
+  });
+
+  test(`captures the bottom-left favorite error toast at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await page.addInitScript(() => {
+      const original = Storage.prototype.setItem;
+      Storage.prototype.setItem = function (key, value) {
+        if (key === 'prompt-bank.favorites.v1') throw new DOMException('Storage full.', 'QuotaExceededError');
+        return original.call(this, key, value);
+      };
+    });
+    await page.goto('/');
+    await page.getByRole('button', { name: 'Investigate a Topic', exact: true }).click();
+    await page.getByRole('button', { name: 'Add Investigate a Topic to favorites (Built in)' }).click();
+    await expect(page.getByText('Favorite change not saved', { exact: true })).toBeVisible();
+    await page.mouse.move(1400, 10);
+    await page.evaluate(fontsReady);
+    await expect(page).toHaveScreenshot(`favorites-error-toast-${width}.png`, { animations: 'disabled', fullPage: true });
+  });
+}
+
 test('captures the Wave 1A desktop Composer fixture with two model roles', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto(composerFixture);
