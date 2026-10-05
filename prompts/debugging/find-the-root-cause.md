@@ -3,7 +3,7 @@ id: find-the-root-cause
 title: Find the Root Cause
 category: debugging
 description: Trace a bug to its actual cause with evidence, before anything gets fixed.
-model_default: gpt-5-6-sol
+model_default: gpt-6-1-sol
 variables:
   - name: symptom
     description: What goes wrong, and what you expected instead

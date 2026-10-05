@@ -1,5 +1,6 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
+import type { FavoriteSnapshot, PromptReference } from '../src/data/favorites';
 
 const validPrompt = (id: string, title: string, category = 'review') =>
   `---\nid: ${id}\ntitle: ${title}\ndescription: ${title} prompt\ncategory: ${category}\n---\nBody for ${id}.`;
@@ -24,6 +25,7 @@ const mockData = {
 
 async function mockDesktop(page: Page) {
   await page.addInitScript((data) => {
+    let favorites: FavoriteSnapshot = { version: 1, favorites: [] };
     // Minimal stand-in for the Tauri IPC bridge the desktop shell provides.
     const win = window as unknown as {
       __TAURI_INTERNALS__: unknown;
@@ -32,8 +34,19 @@ async function mockDesktop(page: Page) {
     };
     win.__pbVersionRequests = 0;
     win.__TAURI_INTERNALS__ = {
-      invoke: (cmd: string, args: { id?: string }) => {
+      invoke: (cmd: string, args: { id?: string; reference?: PromptReference; favorite?: boolean }) => {
         switch (cmd) {
+          case 'read_favorites':
+            return Promise.resolve(favorites);
+          case 'set_favorite': {
+            const reference = args.reference;
+            if (!reference) return Promise.reject({ kind: 'invalid_favorite', message: 'Missing reference.' });
+            const key = JSON.stringify(reference);
+            const next = favorites.favorites.filter((item) => JSON.stringify(item) !== key);
+            if (args.favorite) next.push(reference);
+            favorites = { version: 1, favorites: next };
+            return Promise.resolve(favorites);
+          }
           case 'plugin:app|version':
             win.__pbVersionRequests = (win.__pbVersionRequests ?? 0) + 1;
             switch (win.__pbVersionMode) {
@@ -75,7 +88,39 @@ test.beforeEach(async ({ page }) => {
 // Scope prompt-row assertions to the library region because the selected
 // prompt's title can also appear in the composer.
 const libraryButton = (page: Page, name: RegExp) =>
-  page.getByRole('region', { name: 'Prompt library' }).getByRole('button', { name });
+  page.getByRole('region', { name: 'Prompt library' }).getByRole('button', { name: new RegExp(`^${name.source}`, name.flags) });
+
+test('favorite identity separates the same prompt ID across global and folder instances', async ({ page }) => {
+  await page.addInitScript((md) => {
+    const internals = (window as unknown as { __TAURI_INTERNALS__: Internals }).__TAURI_INTERNALS__;
+    const base = internals.invoke;
+    internals.invoke = (cmd, args) => {
+      if (cmd === 'read_global_prompts') return Promise.resolve({ files: [{ relativePath: 'shared.md', contents: md }] });
+      if (cmd === 'open_workspace') {
+        return Promise.resolve({
+          workspaceId: args.id, label: args.id === 'ws1' ? 'alpha' : 'beta',
+          files: [{ relativePath: 'shared.md', contents: md }]
+        });
+      }
+      return base(cmd, args);
+    };
+  }, validPrompt('shared-id', 'Shared Prompt'));
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Add Shared Prompt to favorites (Global)' }).click();
+  await expect(page.getByRole('button', { name: 'Remove Shared Prompt from favorites (Global)' })).toHaveAttribute('aria-busy', 'false');
+  await page.getByRole('button', { name: 'Recent folders' }).click();
+  await page.getByRole('menuitem', { name: 'Open alpha' }).click();
+  await expect(page.getByRole('button', { name: 'Add Shared Prompt to favorites (Folder)' })).toHaveAttribute('aria-pressed', 'false');
+  await page.getByRole('button', { name: 'Add Shared Prompt to favorites (Folder)' }).click();
+  await expect(page.getByRole('button', { name: 'Remove Shared Prompt from favorites (Folder)' })).toHaveAttribute('aria-busy', 'false');
+  await page.getByRole('button', { name: 'Recent folders' }).click();
+  await page.getByRole('menuitem', { name: 'Open beta' }).click();
+  await expect(page.getByRole('button', { name: 'Add Shared Prompt to favorites (Folder)' })).toHaveAttribute('aria-pressed', 'false');
+  await page.getByRole('tab', { name: 'alpha', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Remove Shared Prompt from favorites (Folder)' })).toHaveAttribute('aria-pressed', 'true');
+  await page.getByRole('tab', { name: 'Library', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Remove Shared Prompt from favorites (Global)' })).toHaveAttribute('aria-pressed', 'true');
+});
 
 test('the Library tab shows built in and global prompts with source labels', async ({ page }) => {
   await page.goto('/');
@@ -282,7 +327,7 @@ test('a delayed global load preserves in-progress composer input', async ({ page
   });
 
   await page.goto('/');
-  await page.getByRole('button', { name: 'Rewrite for Clarity' }).click();
+  await page.getByRole('button', { name: 'Rewrite for Clarity', exact: true }).click();
   const sentinel = 'A distinctive sentinel sentence.';
   await page.getByLabel('draft', { exact: true }).fill(sentinel);
 
@@ -344,7 +389,7 @@ test('re-picking the same folder with changed content refreshes composer default
 
   await page.goto('/');
   await page.getByRole('button', { name: 'Open folder' }).click();
-  await page.getByRole('button', { name: /Repick Prompt/ }).click();
+  await page.getByRole('button', { name: /^Repick Prompt/ }).click();
   await expect(page.getByLabel('topic', { exact: true })).toHaveValue('first-default');
 
   // Edit the field, then re-pick the same folder whose content changed.

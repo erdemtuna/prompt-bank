@@ -19,6 +19,8 @@ fn build_app() -> tauri::App<tauri::test::MockRuntime> {
     mock_builder()
         .manage(crate::state::AppState::new())
         .invoke_handler(tauri::generate_handler![
+            crate::commands::read_favorites,
+            crate::commands::set_favorite,
             crate::commands::read_global_prompts,
             crate::commands::list_workspaces,
             crate::commands::open_workspace,
@@ -51,11 +53,19 @@ fn commands_read_global_and_folder_prompts_over_ipc() {
     std::env::set_var("PROMPT_BANK_HOME", home.path());
 
     fs::create_dir_all(home.path().join("writing")).unwrap();
-    fs::write(home.path().join("writing/g.md"), valid_prompt("g", "G", "writing")).unwrap();
+    fs::write(
+        home.path().join("writing/g.md"),
+        valid_prompt("g", "G", "writing"),
+    )
+    .unwrap();
 
     let workspace = tempfile::tempdir().unwrap();
     fs::create_dir_all(workspace.path().join(".prompt-bank/review")).unwrap();
-    fs::write(workspace.path().join(".prompt-bank/review/f.md"), valid_prompt("f", "F", "review")).unwrap();
+    fs::write(
+        workspace.path().join(".prompt-bank/review/f.md"),
+        valid_prompt("f", "F", "review"),
+    )
+    .unwrap();
 
     // Register the workspace directly so the test has an id to open.
     let canonical = fs::canonicalize(workspace.path()).unwrap();
@@ -65,40 +75,92 @@ fn commands_read_global_and_folder_prompts_over_ipc() {
     save_registry(&home.path().join(REGISTRY_FILE), &registry).unwrap();
 
     let app = build_app();
-    let webview = WebviewWindowBuilder::new(&app, "main", Default::default()).build().unwrap();
+    let webview = WebviewWindowBuilder::new(&app, "main", Default::default())
+        .build()
+        .unwrap();
 
     // read_global_prompts returns the one global prompt.
-    let global: Value = tauri::test::get_ipc_response(&webview, request("read_global_prompts", json!({})))
-        .unwrap()
-        .deserialize()
-        .unwrap();
+    let global: Value =
+        tauri::test::get_ipc_response(&webview, request("read_global_prompts", json!({})))
+            .unwrap()
+            .deserialize()
+            .unwrap();
     assert_eq!(global["files"].as_array().unwrap().len(), 1);
     assert_eq!(global["files"][0]["relativePath"], "writing/g.md");
 
     // list_workspaces returns the registered workspace.
-    let list: Value = tauri::test::get_ipc_response(&webview, request("list_workspaces", json!({})))
-        .unwrap()
-        .deserialize()
-        .unwrap();
+    let list: Value =
+        tauri::test::get_ipc_response(&webview, request("list_workspaces", json!({})))
+            .unwrap()
+            .deserialize()
+            .unwrap();
     assert_eq!(list.as_array().unwrap().len(), 1);
     assert_eq!(list[0]["id"], id);
     assert_eq!(list[0]["label"], "ws");
 
     // open_workspace reads the folder's .prompt-bank tree.
-    let opened: Value = tauri::test::get_ipc_response(&webview, request("open_workspace", json!({ "id": id })))
-        .unwrap()
-        .deserialize()
-        .unwrap();
+    let opened: Value =
+        tauri::test::get_ipc_response(&webview, request("open_workspace", json!({ "id": id })))
+            .unwrap()
+            .deserialize()
+            .unwrap();
     assert_eq!(opened["workspaceId"], id);
     assert_eq!(opened["files"].as_array().unwrap().len(), 1);
     assert_eq!(opened["files"][0]["relativePath"], "review/f.md");
 
+    let favorites: Value =
+        tauri::test::get_ipc_response(&webview, request("read_favorites", json!({})))
+            .unwrap()
+            .deserialize()
+            .unwrap();
+    assert_eq!(favorites, json!({ "version": 1, "favorites": [] }));
+    let reference = json!({ "source": "folder", "workspaceId": id, "promptId": "f" });
+    let starred: Value = tauri::test::get_ipc_response(
+        &webview,
+        request(
+            "set_favorite",
+            json!({ "reference": reference, "favorite": true }),
+        ),
+    )
+    .unwrap()
+    .deserialize()
+    .unwrap();
+    assert_eq!(starred["favorites"], json!([reference]));
+    let invalid: Value = tauri::test::get_ipc_response(
+        &webview,
+        request(
+            "set_favorite",
+            json!({
+                "reference": { "source": "folder", "workspaceId": null, "promptId": "f" },
+                "favorite": true
+            }),
+        ),
+    )
+    .unwrap_err();
+    assert_eq!(invalid["kind"], "invalid_favorite");
+
     // remove_workspace empties the recents list.
-    let after: Value = tauri::test::get_ipc_response(&webview, request("remove_workspace", json!({ "id": id })))
-        .unwrap()
-        .deserialize()
-        .unwrap();
+    let after: Value =
+        tauri::test::get_ipc_response(&webview, request("remove_workspace", json!({ "id": id })))
+            .unwrap()
+            .deserialize()
+            .unwrap();
     assert_eq!(after.as_array().unwrap().len(), 0);
+    let dormant: Value =
+        tauri::test::get_ipc_response(&webview, request("read_favorites", json!({})))
+            .unwrap()
+            .deserialize()
+            .unwrap();
+    assert_eq!(dormant["favorites"], json!([reference]));
+    let stale: Value = tauri::test::get_ipc_response(
+        &webview,
+        request(
+            "set_favorite",
+            json!({ "reference": reference, "favorite": false }),
+        ),
+    )
+    .unwrap_err();
+    assert_eq!(stale["kind"], "not_found");
 
     std::env::remove_var("PROMPT_BANK_HOME");
 }

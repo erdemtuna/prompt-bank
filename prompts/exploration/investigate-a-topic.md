@@ -3,7 +3,7 @@ id: investigate-a-topic
 title: Investigate a Topic
 category: exploration
 description: Investigate a question or an area of a codebase deeply before deciding what to build.
-model_default: gpt-5-6-sol
+model_default: gpt-6-1-sol
 model_roles:
   model:
     label: Investigation model

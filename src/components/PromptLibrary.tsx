@@ -1,4 +1,6 @@
-import { Input, Text, makeStyles } from '@fluentui/react-components';
+import { Button, Input, Text, Tooltip, makeStyles, mergeClasses } from '@fluentui/react-components';
+import { StarFilled, StarRegular } from '@fluentui/react-icons';
+import { useRef } from 'react';
 import type { Prompt } from '../data/schemas';
 import { formatCount, shortcutModifier } from './promptUi';
 
@@ -80,6 +82,24 @@ const useStyles = makeStyles({
     color: 'var(--sw-ink)',
     borderBottom: '2px solid var(--sw-accent)'
   },
+  favoriteFilter: {
+    justifySelf: 'start',
+    borderRadius: 0,
+    borderBottom: '2px solid transparent',
+    padding: '2px 0',
+    backgroundColor: 'transparent',
+    fontFamily: 'var(--sw-mono)',
+    fontSize: '11px',
+    letterSpacing: '0.1em',
+    textTransform: 'uppercase',
+    color: 'var(--sw-muted)',
+    ':hover': { color: 'var(--sw-ink)', backgroundColor: 'var(--sw-fill)' },
+    ':active': { color: 'var(--sw-ink)' }
+  },
+  favoriteFilterActive: {
+    color: 'var(--sw-ink)',
+    borderBottomColor: 'var(--sw-accent)'
+  },
   summary: {
     marginTop: '12px',
     marginBottom: '4px',
@@ -105,10 +125,10 @@ const useStyles = makeStyles({
     width: '100%',
     boxSizing: 'border-box',
     display: 'grid',
-    gridTemplateColumns: '30px minmax(0, 1fr)',
-    columnGap: '14px',
+    gridTemplateColumns: 'minmax(0, 1fr) 36px',
+    columnGap: '4px',
     alignItems: 'start',
-    padding: '14px 14px 14px 11px',
+    padding: '0 6px 0 0',
     background: 'none',
     borderTop: 'none',
     borderRight: 'none',
@@ -129,6 +149,40 @@ const useStyles = makeStyles({
   rowSelected: {
     backgroundColor: 'var(--sw-fill)',
     borderLeft: '3px solid var(--sw-accent)'
+  },
+  selectButton: {
+    appearance: 'none',
+    display: 'grid',
+    gridTemplateColumns: '30px minmax(0, 1fr)',
+    gap: '14px',
+    textAlign: 'left',
+    border: 'none',
+    backgroundColor: 'transparent',
+    padding: '14px 4px 14px 8px',
+    minWidth: 0,
+    color: 'inherit',
+    cursor: 'pointer',
+    ':focus-visible': { outline: '2px solid var(--sw-accent)', outlineOffset: '-2px' }
+  },
+  star: {
+    minWidth: '32px',
+    width: '32px',
+    height: '32px',
+    padding: 0,
+    marginTop: '8px',
+    color: 'var(--sw-accent-strong)',
+    ':hover': { color: 'var(--sw-accent-strong)', backgroundColor: 'var(--sw-fill)' },
+    ':active': { color: 'var(--sw-accent-strong)' }
+  },
+  failed: {
+    gridColumn: '1 / -1',
+    padding: '0 8px 8px 52px',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+    fontFamily: 'var(--sw-mono)',
+    fontSize: '11px',
+    color: 'var(--sw-accent-strong)'
   },
   num: {
     fontFamily: 'var(--sw-mono)',
@@ -180,6 +234,8 @@ const useStyles = makeStyles({
   }
 });
 
+export type FavoriteRowState = { favorite: boolean; unsaved: boolean; pending: boolean };
+
 type Props = {
   prompts: Prompt[];
   categories: string[];
@@ -191,6 +247,12 @@ type Props = {
   showSourceFilter: boolean;
   totalPromptCount: number;
   selectedPromptHidden: boolean;
+  favoritesOnly: boolean;
+  favoritesLoading: boolean;
+  favoriteState: (prompt: Prompt) => FavoriteRowState;
+  onFavoritesChange: (value: boolean) => void;
+  onToggleFavorite: (prompt: Prompt, origin: HTMLButtonElement) => void;
+  onRetryFavorite: (prompt: Prompt) => void;
   onSearchChange: (value: string) => void;
   onCategoryChange: (value: string) => void;
   onSourceChange: (value: string) => void;
@@ -210,6 +272,12 @@ export function PromptLibrary({
   showSourceFilter,
   totalPromptCount,
   selectedPromptHidden,
+  favoritesOnly,
+  favoritesLoading,
+  favoriteState,
+  onFavoritesChange,
+  onToggleFavorite,
+  onRetryFavorite,
   onSearchChange,
   onCategoryChange,
   onSourceChange,
@@ -218,7 +286,9 @@ export function PromptLibrary({
   onShowSelectedPrompt
 }: Props) {
   const styles = useStyles();
-  const filtersAreActive = Boolean(search.trim()) || category !== 'all' || sourceFilter !== 'all';
+  const selectionRefs = useRef(new Map<string, HTMLButtonElement>());
+  const favoriteFilterRef = useRef<HTMLButtonElement>(null);
+  const filtersAreActive = Boolean(search.trim()) || category !== 'all' || sourceFilter !== 'all' || favoritesOnly;
   const resultSummary = filtersAreActive
     ? `${String(prompts.length).padStart(2, '0')} / ${String(totalPromptCount).padStart(2, '0')} match`
     : `Index — ${String(totalPromptCount).padStart(2, '0')} prompts`;
@@ -237,6 +307,17 @@ export function PromptLibrary({
           value={search}
           onChange={(_, data) => onSearchChange(data.value)}
         />
+        <Button
+          ref={favoriteFilterRef}
+          appearance="subtle"
+          className={mergeClasses(styles.favoriteFilter, favoritesOnly && styles.favoriteFilterActive)}
+          icon={favoritesOnly ? <StarFilled /> : <StarRegular />}
+          aria-pressed={favoritesOnly}
+          disabled={favoritesLoading}
+          onClick={() => onFavoritesChange(!favoritesOnly)}
+        >
+          Favorites
+        </Button>
       {showSourceFilter ? (
         <div className={styles.filters} role="group" aria-label="Filter by source">
           {sourceOptions.map((option) => {
@@ -291,25 +372,63 @@ export function PromptLibrary({
           const isSelected = prompt.key === selectedPromptKey;
           const number = String(index + 1).padStart(2, '0');
           const metaParts = showSourceFilter ? [prompt.sourceLabel, prompt.category] : [prompt.category];
+          const favorite = favoriteState(prompt);
+          const starLabel = `${favorite.favorite ? 'Remove' : 'Add'} ${prompt.title} ${favorite.favorite ? 'from' : 'to'} favorites (${prompt.sourceLabel})`;
           if (prompt.kind === 'command') metaParts.push('command');
           if (prompt.variables.length > 0) metaParts.push(formatCount(prompt.variables.length, 'input'));
 
           return (
-            <button
-              type="button"
+            <div
               key={prompt.key}
               className={isSelected ? `${styles.row} ${styles.rowSelected}` : styles.row}
-              aria-pressed={isSelected}
-              aria-current={isSelected ? 'true' : undefined}
-              aria-label={`${prompt.title}${showSourceFilter ? `, ${prompt.sourceLabel}` : ''}${isSelected ? ', selected' : ''}`}
-              onClick={() => onSelectPrompt(prompt.key)}
             >
-              <span className={isSelected ? `${styles.num} ${styles.numSelected}` : styles.num}>{number}</span>
-              <span className={styles.body}>
-                <span className={styles.title}>{prompt.title}</span>
-                <span className={styles.meta}>{metaParts.join(' — ')}</span>
-              </span>
-            </button>
+              <button
+                ref={(element) => {
+                  if (element) selectionRefs.current.set(prompt.key, element);
+                  else selectionRefs.current.delete(prompt.key);
+                }}
+                type="button"
+                className={styles.selectButton}
+                data-prompt-select
+                aria-pressed={isSelected}
+                aria-current={isSelected ? 'true' : undefined}
+                aria-label={`${prompt.title}${showSourceFilter ? `, ${prompt.sourceLabel}` : ''}${isSelected ? ', selected' : ''}`}
+                onClick={() => onSelectPrompt(prompt.key)}
+              >
+                <span className={isSelected ? `${styles.num} ${styles.numSelected}` : styles.num}>{number}</span>
+                <span className={styles.body}>
+                  <span className={styles.title}>{prompt.title}</span>
+                  <span className={styles.meta}>{metaParts.join(' — ')}</span>
+                </span>
+              </button>
+              <Tooltip content={favorite.unsaved ? `${starLabel}. Not saved.` : starLabel} relationship="description">
+                <Button
+                  className={styles.star}
+                  appearance="subtle"
+                  icon={favorite.favorite ? <StarFilled /> : <StarRegular />}
+                  aria-label={starLabel}
+                  aria-pressed={favorite.favorite}
+                  aria-busy={favorite.pending}
+                  disabled={favoritesLoading}
+                  onClick={(event) => {
+                    if (favoritesOnly && favorite.favorite && document.activeElement === event.currentTarget) {
+                      const neighbor = prompts[index + 1] ?? prompts[index - 1];
+                      if (neighbor) selectionRefs.current.get(neighbor.key)?.focus();
+                      else favoriteFilterRef.current?.focus();
+                    }
+                    onToggleFavorite(prompt, event.currentTarget);
+                  }}
+                />
+              </Tooltip>
+              {favorite.unsaved ? (
+                <div className={styles.failed}>
+                  <span>Not saved</span>
+                  <Button appearance="subtle" size="small" onClick={() => onRetryFavorite(prompt)}>
+                    Retry
+                  </Button>
+                </div>
+              ) : null}
+            </div>
           );
         })}
       </div>

@@ -13,7 +13,7 @@ title: Human-readable title
 category: Any non-empty category label
 description: Short description of when to use this prompt
 kind: prompt
-model_default: gpt-5-6-sol
+model_default: gpt-6-1-sol
 model_roles:
   model:
     label: Investigation model
@@ -249,7 +249,7 @@ id: review-example
 title: Review example
 category: review
 description: Demonstrates optional focus blocks
-model_default: gpt-5-6-sol
+model_default: gpt-6-1-sol
 variables:
   - name: pullRequestUrl
     description: Pull request to review
@@ -308,7 +308,7 @@ Command snippets should be shell-ready after composition. Keep them explicit and
 
 ## Model roles and defaults
 
-Use `gpt-5-6-sol` as the default for required model placeholders. Optional model fragments omit model guidance until the user explicitly chooses a preset.
+Built-in prompts use `gpt-6-1-sol` as their explicit default for required model placeholders. Authors can set `model_default` to any declared preset. If it is omitted, the Composer retains its first-preset fallback; declare the default explicitly rather than relying on catalog ordering. Optional model fragments omit model guidance until the user explicitly chooses a preset.
 
 Model presets live in `model-presets.yaml` and are descriptive copy guidance only. They label the copied prompt text for the user; they are not routing, provider, or execution configuration.
 

@@ -3,7 +3,7 @@ id: review-a-pull-request
 title: Review a Pull Request
 category: review
 description: Multi-perspective PR review that returns findings with evidence, severity, and a fix.
-model_default: gpt-5-6-sol
+model_default: gpt-6-1-sol
 variables:
   - name: pullRequest
     description: Pull request URL, number, or branch to review

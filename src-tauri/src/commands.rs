@@ -6,14 +6,74 @@ use tauri_plugin_dialog::DialogExt;
 
 use prompt_bank_core::{
     find_by_id, load_registry, read_markdown_tree, remove_workspace as registry_remove,
-    resolve_global_dir, save_registry, upsert_workspace, PromptFile, PromptFsError, ReadLimits,
-    REGISTRY_FILE,
+    resolve_global_dir, save_registry, upsert_workspace, FavoriteSource, FavoritesError,
+    PromptFile, PromptFsError, PromptReference, ReadLimits, REGISTRY_FILE,
 };
 
-use crate::dto::{CommandError, GlobalPrompts, OpenedWorkspace, WorkspaceSummary};
+use crate::dto::{
+    CommandError, FavoriteSnapshot, GlobalPrompts, OpenedWorkspace, WorkspaceSummary,
+};
 use crate::state::AppState;
 
 const DEFAULT_LABEL: &str = "workspace";
+
+#[tauri::command]
+pub async fn read_favorites<R: Runtime>(
+    app: AppHandle<R>,
+) -> Result<FavoriteSnapshot, CommandError> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        let _guard = state
+            .favorites_lock
+            .lock()
+            .map_err(|_| CommandError::new("panic", "Favorites storage stopped unexpectedly."))?;
+        Ok(prompt_bank_core::read_favorites(&resolve_global_dir()?)?)
+    })
+    .await
+    .map_err(|_| CommandError::new("panic", "Reading favorites stopped unexpectedly."))?
+}
+
+#[tauri::command]
+pub async fn set_favorite<R: Runtime>(
+    app: AppHandle<R>,
+    reference: serde_json::Value,
+    favorite: serde_json::Value,
+) -> Result<FavoriteSnapshot, CommandError> {
+    let reference: PromptReference =
+        serde_json::from_value(reference).map_err(|_| FavoritesError::InvalidReference)?;
+    reference.validate()?;
+    let favorite = favorite.as_bool().ok_or(FavoritesError::InvalidReference)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        if reference.source == FavoriteSource::Folder {
+            let _guard = state.registry_lock.lock().map_err(|_| {
+                CommandError::new("panic", "The workspace list stopped unexpectedly.")
+            })?;
+            let registry = load_registry(&registry_file()?)?;
+            if !reference
+                .workspace_id
+                .as_ref()
+                .is_some_and(|id| find_by_id(&registry, id).is_some())
+            {
+                return Err(CommandError::new(
+                    "not_found",
+                    "That folder is no longer remembered. Reopen it to save favorites.",
+                ));
+            }
+        }
+        let _guard = state
+            .favorites_lock
+            .lock()
+            .map_err(|_| CommandError::new("panic", "Favorites storage stopped unexpectedly."))?;
+        Ok(prompt_bank_core::set_favorite(
+            &resolve_global_dir()?,
+            reference,
+            favorite,
+        )?)
+    })
+    .await
+    .map_err(|_| CommandError::new("panic", "Saving the favorite stopped unexpectedly."))?
+}
 
 fn registry_file() -> Result<PathBuf, CommandError> {
     Ok(resolve_global_dir()?.join(REGISTRY_FILE))

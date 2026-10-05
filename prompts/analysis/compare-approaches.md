@@ -3,7 +3,7 @@ id: compare-approaches
 title: Compare Approaches
 category: analysis
 description: Weigh two or more approaches against real criteria and commit to a recommendation.
-model_default: gpt-5-6-sol
+model_default: gpt-6-1-sol
 variables:
   - name: decision
     description: The decision to make, and why it is being made now

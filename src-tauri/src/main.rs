@@ -12,6 +12,8 @@ fn main() {
         .plugin(tauri_plugin_dialog::init())
         .manage(state::AppState::new())
         .invoke_handler(tauri::generate_handler![
+            commands::read_favorites,
+            commands::set_favorite,
             commands::read_global_prompts,
             commands::list_workspaces,
             commands::pick_workspace,

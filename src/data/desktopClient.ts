@@ -1,6 +1,7 @@
 import { getVersion } from '@tauri-apps/api/app';
 import { invoke } from '@tauri-apps/api/core';
 import type { PromptSourceInput } from './loaders';
+import { parseFavoriteSnapshot, type FavoriteSnapshot, type SetFavoriteInput } from './favorites';
 
 // These DTO shapes mirror the golden serialization tested in the Rust core crate
 // (src-tauri/crates/prompt-bank-core/tests/dto.rs). Keep them in sync.
@@ -74,6 +75,14 @@ export async function removeWorkspace(id: string): Promise<WorkspaceSummaryDto[]
 
 export async function setWindowTitle(title: string): Promise<void> {
   await invoke('set_window_title', { title });
+}
+
+export async function readFavorites(): Promise<FavoriteSnapshot> {
+  return parseFavoriteSnapshot(await invoke<unknown>('read_favorites'));
+}
+
+export async function setFavorite(input: SetFavoriteInput): Promise<FavoriteSnapshot> {
+  return parseFavoriteSnapshot(await invoke<unknown>('set_favorite', input));
 }
 
 /** Extract a structured command error, or a generic fallback. */

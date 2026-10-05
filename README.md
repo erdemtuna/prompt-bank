@@ -32,6 +32,7 @@ Prefer to build it yourself? See [Building the desktop app](#building-the-deskto
 - Structured. Prompts are Markdown with a small, checked schema that catches malformed composition, while the built-ins provide explicit answer-first output contracts.
 - Yours to keep. Plain files you can diff, grep, and commit next to the code they belong to. No account, no proprietary format, nothing to migrate later.
 - Together in one place. A personal global set and any project folder you open appear alongside the built in prompts, each with a source label.
+- Favorites. Star useful prompts and combine the Favorites filter with search, category, and source filters without changing the selected composition.
 - Local. Everything happens on your machine. Prompt Bank renders text and copies it; it never executes a prompt, calls a model, or runs a workflow.
 
 ## The built in prompts
@@ -54,6 +55,16 @@ Twelve prompts ship with the app. They are meant to be useful on their own and t
 | Summarize Branch Diff | cli | A command that prints what this branch changed |
 
 Keyboard: <kbd>Ctrl</kbd>/<kbd>Cmd</kbd>+<kbd>K</kbd> jumps to search, <kbd>Ctrl</kbd>/<kbd>Cmd</kbd>+<kbd>Enter</kbd> copies the composed prompt. Refresh re-reads your prompt files after you edit them on disk.
+
+## Favorites
+
+Use the separate star beside a prompt to add or remove a favorite. The row still selects the prompt; starring it does not change your inputs or copy anything. Favorites intersects with the existing filters and keeps the library's category/title order. A folder favorite stays in that folder's workspace, not in Library.
+
+Desktop favorites store only source-qualified prompt IDs and opaque workspace IDs in `~/.prompt-bank/favorites.json`, or the home selected by `PROMPT_BANK_HOME`. The versioned store is bounded to 1 MiB and 5,000 references and uses coordinated, atomic updates. The browser stores built-in favorite references in its own origin-local storage. Neither store contains prompt text, drafts, workflow choices, model selections, or filesystem paths, and the stores do not synchronize.
+
+A file rename preserves its favorite when the declared prompt ID is unchanged. Changing the ID creates a new favorite identity. Forgetting a folder leaves its references dormant; re-adding the folder assigns a new workspace ID rather than reconnecting the old favorites.
+
+If storage is unavailable or a save fails, the current change is temporary and marked **Not saved**. A bottom-left overlay notification offers Retry and Dismiss without moving the page or blocking a valid copy. Dismiss hides the notification, not the failure or temporary state. Corrupt and unsupported-version stores are not silently replaced.
 
 ## Prompt sources
 
@@ -136,6 +147,8 @@ The analytical built-ins lead with the result, recommendation, or decision impli
 Generic prompt selects and discrete sliders appear first as Workflow, followed by Focus areas, active Model guidance, free-form Context, and the raw template. In Model guidance, each role is the first model-field label rather than a separate card heading. Optional roles start at **No explicit model** and reveal Context and Reasoning only after a preset is selected. Authors can use `visible_when` to remove irrelevant controls, `enabled_when` to keep an unavailable option visible, compound `{{#when}}` conditions for coordinated choices, `{{#model}}` fragments to omit only model descriptors, and `model_roles` to explain who a model label is intended for. Hidden paths are inactive during composition, and unavailable options are effectively off.
 
 These fields only shape the text that is previewed and copied. Model roles and workflow wording are descriptive metadata, not execution or model-routing configuration.
+
+The bundled catalog includes GPT-6.1 Sol, GPT-6 Astra, Claude Opus 5.5, and Claude Sonnet 5.5 alongside the retained GPT-5.6 Sol/Terra, Opus 5, and Sonnet 5 IDs. Built-in required roles explicitly default to GPT-6.1 Sol; optional roles still start with No explicit model. Context and reasoning labels are curated per model and never fetched or executed by the app.
 
 ## How it works
 

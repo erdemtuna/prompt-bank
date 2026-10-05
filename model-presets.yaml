@@ -11,8 +11,6 @@ presets:
     reasoning:
       - id: none
         label: no reasoning
-      - id: minimal
-        label: minimal reasoning
       - id: low
         label: low reasoning
       - id: medium
@@ -35,8 +33,6 @@ presets:
     reasoning:
       - id: none
         label: no reasoning
-      - id: minimal
-        label: minimal reasoning
       - id: low
         label: low reasoning
       - id: medium
@@ -57,10 +53,6 @@ presets:
         label: 1M context
     default_reasoning: medium
     reasoning:
-      - id: none
-        label: no reasoning
-      - id: minimal
-        label: minimal reasoning
       - id: low
         label: low reasoning
       - id: medium
@@ -81,10 +73,88 @@ presets:
         label: 1M context
     default_reasoning: medium
     reasoning:
+      - id: low
+        label: low reasoning
+      - id: medium
+        label: medium reasoning
+      - id: high
+        label: high reasoning
+      - id: xhigh
+        label: extra high reasoning
+      - id: max
+        label: max reasoning
+  - id: gpt-6-1-sol
+    label: GPT-6.1 Sol
+    default_context: 1m
+    contexts:
+      - id: standard
+        label: ""
+      - id: 1m
+        label: 1M context
+    default_reasoning: medium
+    reasoning:
       - id: none
         label: no reasoning
-      - id: minimal
-        label: minimal reasoning
+      - id: low
+        label: low reasoning
+      - id: medium
+        label: medium reasoning
+      - id: high
+        label: high reasoning
+      - id: xhigh
+        label: extra high reasoning
+      - id: max
+        label: max reasoning
+  - id: gpt-6-astra
+    label: GPT-6 Astra
+    default_context: 1m
+    contexts:
+      - id: standard
+        label: ""
+      - id: 1m
+        label: 1M context
+    default_reasoning: medium
+    reasoning:
+      - id: low
+        label: low reasoning
+      - id: medium
+        label: medium reasoning
+      - id: high
+        label: high reasoning
+      - id: xhigh
+        label: extra high reasoning
+      - id: max
+        label: max reasoning
+  - id: opus-5-5
+    label: Claude Opus 5.5
+    default_context: 1m
+    contexts:
+      - id: standard
+        label: ""
+      - id: 1m
+        label: 1M context
+    default_reasoning: medium
+    reasoning:
+      - id: low
+        label: low reasoning
+      - id: medium
+        label: medium reasoning
+      - id: high
+        label: high reasoning
+      - id: xhigh
+        label: extra high reasoning
+      - id: max
+        label: max reasoning
+  - id: sonnet-5-5
+    label: Claude Sonnet 5.5
+    default_context: 1m
+    contexts:
+      - id: standard
+        label: ""
+      - id: 1m
+        label: 1M context
+    default_reasoning: medium
+    reasoning:
       - id: low
         label: low reasoning
       - id: medium

@@ -1,10 +1,10 @@
 use std::fs;
-use std::io::Write;
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use crate::atomic_file::write_atomic_bytes;
 use crate::errors::PromptFsError;
 
 pub const REGISTRY_VERSION: u32 = 1;
@@ -33,7 +33,10 @@ pub struct Registry {
 
 impl Default for Registry {
     fn default() -> Self {
-        Self { version: REGISTRY_VERSION, workspaces: Vec::new() }
+        Self {
+            version: REGISTRY_VERSION,
+            workspaces: Vec::new(),
+        }
     }
 }
 
@@ -68,27 +71,9 @@ pub fn load_registry(path: &Path) -> Result<Registry, PromptFsError> {
 /// Persist the registry atomically through a temp file in the same directory,
 /// rejecting a symlinked target.
 pub fn save_registry(path: &Path, registry: &Registry) -> Result<(), PromptFsError> {
-    match fs::symlink_metadata(path) {
-        Ok(meta) => {
-            if meta.file_type().is_symlink() {
-                return Err(PromptFsError::Symlink(path.to_path_buf()));
-            }
-        }
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
-        Err(err) => return Err(PromptFsError::Io(err)),
-    }
-
-    let dir = path
-        .parent()
-        .ok_or_else(|| PromptFsError::NotADirectory(path.to_path_buf()))?;
-    fs::create_dir_all(dir).map_err(PromptFsError::Io)?;
-
-    let json = serde_json::to_string_pretty(registry).map_err(PromptFsError::Json)?;
-    let mut tmp = tempfile::NamedTempFile::new_in(dir).map_err(PromptFsError::Io)?;
-    tmp.write_all(json.as_bytes()).map_err(PromptFsError::Io)?;
-    tmp.write_all(b"\n").map_err(PromptFsError::Io)?;
-    tmp.persist(path).map_err(|err| PromptFsError::Io(err.error))?;
-    Ok(())
+    let mut json = serde_json::to_string_pretty(registry).map_err(PromptFsError::Json)?;
+    json.push('\n');
+    write_atomic_bytes(path, json.as_bytes())
 }
 
 /// Insert or update a workspace, deduplicating by canonical path, and return its
@@ -128,5 +113,8 @@ pub fn remove_workspace(registry: &mut Registry, id: &str) -> bool {
 
 /// Look up a workspace record by opaque id.
 pub fn find_by_id<'a>(registry: &'a Registry, id: &str) -> Option<&'a WorkspaceRecord> {
-    registry.workspaces.iter().find(|workspace| workspace.id == id)
+    registry
+        .workspaces
+        .iter()
+        .find(|workspace| workspace.id == id)
 }
