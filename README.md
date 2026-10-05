@@ -6,7 +6,7 @@ Keep one version of a prompt instead of hunting through old chats and notes. Cho
 
 Your prompts stay on your machine. Prompt Bank does not run them, call a model, or collect telemetry.
 
-![Prompt Bank composing a technical investigation.](docs/screenshot-v070-investigate.png)
+![Prompt Bank showing favorite prompts and a technical investigation with GPT-6.1 Sol guidance.](docs/screenshot.png)
 
 ## Get the app
 
