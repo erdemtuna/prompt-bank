@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
-import { updateVersionSources, type VersionSources } from '../prepare-release';
+import { updateVersionSources, type VersionSources } from './releaseVersions';
 import {
   compareStableVersions,
   executeGit,
@@ -89,8 +89,7 @@ export function validateReleaseNotes(
   const version = packageJson.version;
   parseStableVersion(version);
 
-  // This is a read-only use of the release preparer's shared parser. Supplying the
-  // current version validates every source without changing any files.
+  // Supplying the current version validates every source without changing files.
   updateVersionSources(sources, version);
 
   const expectedFileName = `v${version}.md`;

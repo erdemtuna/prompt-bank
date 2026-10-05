@@ -40,6 +40,16 @@ npm run dev
 
 For narrower work, use `npm run validate`, `npm test`, or `npm run build`.
 
+Use focused tests while correcting failures, then run the full required checks after the last relevant change. Record the tested commit and any uncommitted changes; a passing result for an earlier revision is not evidence for the current one.
+
+After pushing, inspect CI for the exact commit:
+
+```bash
+npm run ci:status
+```
+
+The command reports the latest applicable CI run and its attempt, with frontend, Linux Rust, and Windows Rust results. Missing, pending, canceled, skipped, or failed evidence exits nonzero. It uses existing GitHub CLI authentication and read-only queries. For structured output, use `npm --silent run ci:status -- <commit-sha> --json`. Ordinary development checks do not query GitHub.
+
 The Rust core can be tested without webview libraries:
 
 ```bash
@@ -53,6 +63,24 @@ cd src-tauri
 cargo test --locked
 ```
 
+For filesystem, locking, symlink, or process changes, verify both Windows and Unix behavior during implementation. CI covers the headless core on both platforms. WSL can provide local Linux coverage; do not make a successful Windows run stand in for Unix-specific tests. Run native IPC coverage when its commands or wire shapes change.
+
+Benchmark test-runner settings before tuning them. Compare complete passing suites under comparable conditions, separate warm-up from repeated measured samples, and check the process exit code as well as reported test counts. Do not benchmark alongside browser or Rust builds. Keep Playwright serial, and do not cap Vitest workers without a reproducible improvement.
+
+On a shared Windows host, serialize the full Vitest and browser/native gates. Running them together can exhaust worker-startup resources even when isolated runs pass; do not accept a partial suite or hide unhandled worker errors.
+
+## Public screenshot
+
+The README image uses an isolated browser context with bundled prompts, fixed geometry, settled fonts, and generic composition inputs:
+
+```bash
+npm run screenshot:readme -- --output docs/screenshot.png
+```
+
+The explicit destination authorizes replacing that PNG. Normal checks write their demo capture to ignored test output, not to the public image. Playwright owns the existing port-4321 server; do not start a competing server. Capture to a separate output path first when reviewing a proposed update.
+
+Inspect the image before committing it. Refresh the public image when an intentional UI change makes it stale, alongside only the affected automated snapshots. Keep historical versioned images.
+
 ## Build installers
 
 ```bash
@@ -62,6 +90,8 @@ npm run desktop:build
 Build on the target operating system. Bundles appear under `src-tauri/target/release/bundle`: Windows produces `.exe` and `.msi`, macOS produces `.app` and `.dmg`, and Linux produces `.AppImage` and `.deb`.
 
 Bundles are currently unsigned. Signing and macOS notarization are not part of the build setup yet.
+
+Native dependency caches can be warmed manually on main for a release candidate. See the [release guide](releases/README.md); this does not publish or install the app.
 
 On WSL, `linuxdeploy` can fail when mounted Windows directories remain in `PATH`. The existing AppImage workaround is:
 

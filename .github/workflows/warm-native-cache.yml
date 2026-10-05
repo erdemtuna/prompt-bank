@@ -1,0 +1,90 @@
+name: Warm native dependency caches
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: native-cache-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate-ref:
+    name: Require main
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    steps:
+      - name: Reject non-main dispatches
+        env:
+          RUN_REF: ${{ github.ref }}
+        run: |
+          if [ "$RUN_REF" != 'refs/heads/main' ]; then
+            echo '::error::Native dependency warming must be dispatched on main.'
+            exit 1
+          fi
+
+  warm:
+    name: Warm dependencies (${{ matrix.name }})
+    needs: validate-ref
+    runs-on: ${{ matrix.platform }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-latest
+            args: '--target aarch64-apple-darwin'
+            name: macOS Apple Silicon
+            slug: macos-arm64
+          - platform: macos-latest
+            args: '--target x86_64-apple-darwin'
+            name: macOS Intel
+            slug: macos-x64
+          - platform: ubuntu-22.04
+            args: ''
+            name: Linux
+            slug: linux
+          - platform: windows-latest
+            args: ''
+            name: Windows
+            slug: windows
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - name: Install frontend dependencies with read-only repository access
+        run: npm ci
+      - name: Set up the pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
+        with:
+          toolchain: '1.94.0'
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+      - uses: Swatinem/rust-cache@v2
+        id: native-cache
+        with:
+          workspaces: src-tauri
+          shared-key: desktop-${{ matrix.slug }}
+          cache-workspace-crates: false
+      - name: Install Linux build dependencies
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf xdg-utils
+      - name: Compile current sources without installers
+        shell: bash
+        run: npm run desktop:build -- --no-bundle --ci ${{ matrix.args }} -- --locked
+      - name: Summarize warming result
+        if: always()
+        shell: bash
+        env:
+          PLATFORM_NAME: ${{ matrix.name }}
+          JOB_STATUS: ${{ job.status }}
+          EXACT_CACHE_HIT: ${{ steps.native-cache.outputs.cache-hit }}
+        run: |
+          printf '### Native dependency warming (%s)\nResult: **%s**\nExact cache hit: %s (partial restores may still occur).\n' "$PLATFORM_NAME" "$JOB_STATUS" "${EXACT_CACHE_HIT:-unavailable}" >> "$GITHUB_STEP_SUMMARY"

@@ -1,6 +1,6 @@
-import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
+import { runCommand } from './processRunner';
 
 export const RELEASE_NOTE_CATEGORIES = [
   { type: 'feature', heading: 'New features' },
@@ -57,22 +57,9 @@ interface Trailer {
 }
 
 export function executeGit(args: readonly string[], cwd: string): GitResult {
-  const result = spawnSync('git', [...args], {
-    cwd,
-    encoding: 'utf8',
-    shell: false,
-    windowsHide: true
+  return runCommand('git', args, cwd, {
+    env: { ...process.env, GIT_TERMINAL_PROMPT: '0', GCM_INTERACTIVE: 'never' }
   });
-
-  if (result.error) {
-    throw new Error(`Unable to run git: ${result.error.message}`);
-  }
-
-  return {
-    status: result.status ?? 1,
-    stdout: result.stdout ?? '',
-    stderr: result.stderr ?? ''
-  };
 }
 
 export function parseStableVersion(version: string): readonly [number, number, number] {

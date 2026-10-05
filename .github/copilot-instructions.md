@@ -25,6 +25,9 @@
 - On Windows PowerShell, if Cargo is not on `PATH`, invoke it as `& "$env:USERPROFILE\.cargo\bin\cargo.exe" ...`; the repository pins Rust 1.94.0 in `rust-toolchain.toml`.
 - Run the full desktop crate tests with `cd src-tauri && cargo test`; unlike the pure core tests, these compile the Tauri/webview IPC smoke test and need native platform libraries.
 - Run `npm run guard:private` after any path, workspace, fixture, or Git-boundary change.
+- Inspect exact-commit CI after pushing with `npm run ci:status -- <commit-sha>`; use `npm --silent run ci:status -- <commit-sha> --json` for compact structured output. Pending or failed results are not release readiness.
+- Check preparation readiness with `npm run release:preflight -- X.Y.Z`. It requires GitHub CLI authentication; normal development checks stay offline.
+- Capture the public README demo with `npm run screenshot:readme -- --output <image.png>`. An explicit output replaces that PNG; normal tests never overwrite the public image.
 
 ## Architecture
 
@@ -106,12 +109,18 @@ Do not put template parsing rules in React components or UI state rules in promp
 - Put parser/composer/application logic tests beside `src/data`; component DOM tests beside components; release/build script tests under `scripts`.
 - Playwright covers end-to-end behavior, responsive geometry, workspaces, shortcuts, screenshots, external-network absence, and Axe checks.
 - Rust core tests cover traversal, limits, registry, home resolution, and DTO JSON. Keep IPC smoke coverage in the desktop crate.
+- Verify Windows and Unix behavior during implementation for filesystem, locking, symlink, and process changes. CI runs headless Rust tests on both; a passing Windows run is not Unix evidence.
+- Use focused checks during corrections and one required final full gate after the last relevant change. Record the tested SHA and dirty diff scope; inspect CI after PR creation/push and surface failures promptly.
+- Keep performance comparisons controlled and require passing exit codes, complete test counts, and repeated measured samples. Do not change worker defaults based on one cold or stalled run.
+- On shared Windows hosts, serialize full Vitest and browser/native gates to avoid worker-startup contention. Do not treat collected passing tests as a complete run when workers failed to start.
+- Tool elapsed time can include approval, queueing, and result delivery. An initial response wait is not a process deadline; use bounded subprocesses and do not attribute opaque waits to compilation without process timestamps.
 - When changing wire DTOs, update Rust golden serialization tests and the TypeScript DTO declarations together.
 - When changing prompt controls or conditions, test composition semantics and effective matrix cardinality, not only rendered control presence.
 
 ## Release conventions
 
 - Release preparation is deterministic and stops before commit, tag, or push: `npm run release:prepare -- X.Y.Z`.
+- Preparation runs the blocking online preflight before writes: clean synchronized main, exact-SHA frontend/Linux/Windows CI, and newest published stable-tag ancestry matching the generated predecessor. Unavailable evidence fails closed; historical note generation remains offline.
 - Keep versions synchronized across `package.json`, both root entries in `package-lock.json`, `src-tauri/Cargo.toml`, and the desktop package entry in `src-tauri/Cargo.lock`.
 - Release notes live in `docs/releases/vX.Y.Z.md` and are generated from first-parent `main` commits since the previous lower SemVer tag.
 - Prefer one contiguous terminal trailer block:
@@ -119,4 +128,7 @@ Do not put template parsing rules in React components or UI state rules in promp
   and one or more `Release-Note: <user-facing change>` entries.
 - Use `Release-Note: skip` by itself for internal-only commits. Commits without metadata fall back to their subject; merge commits must carry structured metadata.
 - Follow `docs/releases/README.md` for regeneration and tag flow. Do not manually create a generic release body or enable GitHub-generated notes.
+- Push the exact preparation commit on main and its tag atomically after approval. Do not rewrite historical tags to bypass ancestry checks.
+- Warm native dependency caches only through the manual main-only workflow when requested; do not add warming to every push or dispatch it automatically. Preserve dependency-install permissions and all-platform publication gates.
+- Include related documentation and public-image review in feature closeout, not as an afterthought during release.
 - The tag workflow validates version sources and the committed body, recreates stale drafts, builds all platform assets, and publishes only after canonical body equality and successful builds.

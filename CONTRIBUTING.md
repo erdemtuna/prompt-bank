@@ -29,7 +29,9 @@ Prompt Bank is copy only. Please do not add prompt execution, model or API calls
 
 - Keep changes focused and describe what you changed and why.
 - Include the output of the relevant checks as proof.
-- For interface changes, include a screenshot.
+- Check CI for the current pushed commit and report pending or failed checks explicitly. Address platform failures before declaring release readiness.
+- For filesystem, locking, symlink, or process changes, include Windows and Unix evidence; keep native IPC coverage for command and wire-shape changes.
+- For interface changes, include a screenshot and review whether the public README image needs refreshing. The [development guide](docs/development.md#public-screenshot) provides the reproducible capture command.
 
 ## License
 

@@ -218,8 +218,11 @@ jobs:
           targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
 
       - uses: Swatinem/rust-cache@v2
+        id: native-cache
         with:
           workspaces: src-tauri
+          shared-key: desktop-${{ matrix.slug }}
+          cache-workspace-crates: false
 
       - name: Install Linux build dependencies
         if: matrix.platform == 'ubuntu-22.04'
@@ -249,6 +252,16 @@ jobs:
             src-tauri/target/*/release/bundle/**
           if-no-files-found: ignore
           retention-days: 7
+
+      - name: Summarize native build
+        if: always()
+        shell: bash
+        env:
+          PLATFORM_NAME: ${{ matrix.name }}
+          JOB_STATUS: ${{ job.status }}
+          EXACT_CACHE_HIT: ${{ steps.native-cache.outputs.cache-hit }}
+        run: |
+          printf '### Native build (%s)\nResult: **%s**\nExact dependency cache hit: %s (partial restores may still occur).\n' "$PLATFORM_NAME" "$JOB_STATUS" "${EXACT_CACHE_HIT:-unavailable}" >> "$GITHUB_STEP_SUMMARY"
 
   publish-release:
     name: Publish the release

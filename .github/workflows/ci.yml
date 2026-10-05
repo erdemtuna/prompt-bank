@@ -9,10 +9,15 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   verify:
     name: Validate, test, and build
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
         with:
@@ -26,8 +31,17 @@ jobs:
       - run: npm run ci
 
   rust-core:
-    name: Rust core tests
-    runs-on: ubuntu-latest
+    name: Rust core tests (${{ matrix.name }})
+    runs-on: ${{ matrix.platform }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: ubuntu-latest
+            name: Linux
+          - platform: windows-latest
+            name: Windows
     steps:
       - uses: actions/checkout@v4
         with:
@@ -43,3 +57,11 @@ jobs:
       - name: Test the pure core crate (no webview libraries needed)
         working-directory: src-tauri
         run: cargo test -p prompt-bank-core --locked
+      - name: Summarize platform result
+        if: always()
+        shell: bash
+        env:
+          PLATFORM_NAME: ${{ matrix.name }}
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          printf '### Rust core (%s)\nResult: **%s**\n' "$PLATFORM_NAME" "$JOB_STATUS" >> "$GITHUB_STEP_SUMMARY"

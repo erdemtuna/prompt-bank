@@ -1,5 +1,5 @@
 import { basename, join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   prepareRelease,
   requireCleanSynchronizedMain,
@@ -7,6 +7,9 @@ import {
   type VersionSources
 } from '../prepare-release';
 import type { GitCommand, GitResult } from './releaseNotes';
+import { releasePreflight, preflightReport } from './releasePreflight';
+import { parsePreflightArguments } from '../release-preflight';
+import { REQUIRED_CI_JOBS, type GitHubReadinessClient } from './githubReadiness';
 
 const LOCAL = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
 const REMOTE = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
@@ -82,6 +85,7 @@ describe('complete release preparation', () => {
     let validated = false;
 
     const result = prepareRelease('0.7.0', root, {
+      github: readyGitHub(),
       git: recordingGit(calls, releaseGit),
       readFile: (path) => requiredFile(files, path),
       writeFile: (path, content) => files.set(path, content),
@@ -114,6 +118,10 @@ describe('complete release preparation', () => {
     ))).toBe(false);
     expect(logs).toContain('  npm run check');
     expect(logs).toContain('  git tag v0.7.0');
+    expect(logs).toContain('  git push --atomic origin main refs/tags/v0.7.0');
+    expect(logs.find((line) => line.includes('git commit'))).toContain(
+      'Release-Note: skip\nCo-authored-by: Copilot App'
+    );
   });
 
   it('rolls back every write when validation fails', () => {
@@ -122,6 +130,7 @@ describe('complete release preparation', () => {
     const files = sourceMap(root, sources);
 
     expect(() => prepareRelease('0.7.0', root, {
+      github: readyGitHub(),
       git: commandGit(releaseGit),
       readFile: (path) => requiredFile(files, path),
       writeFile: (path, content) => files.set(path, content),
@@ -140,6 +149,138 @@ describe('complete release preparation', () => {
     expect(files.has(join(root, 'docs', 'releases', 'v0.7.0.md'))).toBe(false);
   });
 });
+
+describe('blocking release preflight', () => {
+  function fixture(git: GitCommand = commandGit(releaseGit), github = readyGitHub()) {
+    const root = join(process.cwd(), 'virtual-release-repository');
+    const files = sourceMap(root, versionSources());
+    return {
+      root, files,
+      dependencies: {
+        git, github,
+        readFile: (path: string) => requiredFile(files, path),
+        exists: (path: string) => files.has(path)
+      }
+    };
+  }
+
+  it('reports the verified source and never exposes file contents in its JSON report', () => {
+    const setup = fixture();
+    const before = [...setup.files];
+    const report = preflightReport(releasePreflight('0.7.0', setup.root, setup.dependencies));
+    expect(report).toMatchObject({
+      state: 'ready', head: LOCAL, previousTag: 'v0.6.1',
+      currentVersion: '0.6.1', targetVersion: '0.7.0', changeCount: 1
+    });
+    expect(report).not.toHaveProperty('originals');
+    expect([...setup.files]).toEqual(before);
+  });
+
+  it.each(['missing', 'pending', 'failed'] as const)('does not write when CI is %s', (state) => {
+    const github = readyGitHub();
+    github.ci = (sha) => ({ sha, state, message: `CI ${state}`, jobs: [] });
+    const setup = fixture(undefined, github);
+    const writeFile = vi.fn();
+    expect(() => prepareRelease('0.7.0', setup.root, { ...setup.dependencies, writeFile }))
+      .toThrow(/CI is not ready/);
+    expect(writeFile).not.toHaveBeenCalled();
+  });
+
+  it('rejects successful evidence for another commit', () => {
+    const github = readyGitHub();
+    const ci = github.ci;
+    github.ci = () => ci(REMOTE);
+    const setup = fixture(undefined, github);
+    expect(() => releasePreflight('0.7.0', setup.root, setup.dependencies)).toThrow(/CI is not ready/);
+  });
+
+  it('fails closed when GitHub authentication or requests are unavailable', () => {
+    const github = readyGitHub();
+    github.latestStableTag = () => { throw new Error('GitHub unavailable.'); };
+    const setup = fixture(undefined, github);
+    const writeFile = vi.fn();
+    expect(() => prepareRelease('0.7.0', setup.root, { ...setup.dependencies, writeFile }))
+      .toThrow('GitHub unavailable.');
+    expect(writeFile).not.toHaveBeenCalled();
+  });
+
+  it('blocks a newest published tag outside main instead of falling back', () => {
+    const setup = fixture(commandGit((args) =>
+      args[0] === 'merge-base' ? { status: 1, stdout: '', stderr: '' } : releaseGit(args)
+    ));
+    expect(() => releasePreflight('0.7.0', setup.root, setup.dependencies))
+      .toThrow(/outside main's ancestry/);
+  });
+
+  it('requires the published tag to exist after fetch and match the generated predecessor', () => {
+    const missing = fixture(commandGit((args) =>
+      args[0] === 'rev-parse' && args[2]?.startsWith('refs/tags/')
+        ? failure('missing tag') : releaseGit(args)
+    ));
+    expect(() => releasePreflight('0.7.0', missing.root, missing.dependencies))
+      .toThrow(/unavailable locally/);
+    const github = readyGitHub();
+    github.latestStableTag = () => 'v0.6.0';
+    const different = fixture(undefined, github);
+    expect(() => releasePreflight('0.7.0', different.root, different.dependencies))
+      .toThrow(/differs from newest published/);
+  });
+
+  it('blocks existing destinations, target tags, and non-increasing versions before requests', () => {
+    const github = readyGitHub();
+    github.latestStableTag = vi.fn(github.latestStableTag);
+    const existing = fixture(undefined, github);
+    existing.files.set(join(existing.root, 'docs', 'releases', 'v0.7.0.md'), 'preserve');
+    expect(() => releasePreflight('0.7.0', existing.root, existing.dependencies))
+      .toThrow(/overwrite existing/);
+    expect(github.latestStableTag).not.toHaveBeenCalled();
+    const tagged = fixture(commandGit((args) =>
+      args[0] === 'show-ref' ? success('') : releaseGit(args)
+    ), github);
+    expect(() => releasePreflight('0.7.0', tagged.root, tagged.dependencies)).toThrow(/already exists/);
+    const old = fixture(undefined, github);
+    expect(() => releasePreflight('0.6.1', old.root, old.dependencies)).toThrow(/must be greater/);
+    expect(github.latestStableTag).not.toHaveBeenCalled();
+  });
+
+  it('rejects remote drift after online queries', () => {
+    const setup = fixture(commandGit((args) =>
+      args[0] === 'ls-remote' ? success(`${REMOTE}\trefs/heads/main\n`) : releaseGit(args)
+    ));
+    expect(() => releasePreflight('0.7.0', setup.root, setup.dependencies))
+      .toThrow(/changed during readiness/);
+  });
+
+  it('rejects a working tree edited during online queries', () => {
+    let statuses = 0;
+    const setup = fixture(commandGit((args) => {
+      if (args[0] === 'status' && ++statuses > 1) return success(' M package.json\n');
+      return releaseGit(args);
+    }));
+    const writeFile = vi.fn();
+    expect(() => prepareRelease('0.7.0', setup.root, { ...setup.dependencies, writeFile }))
+      .toThrow(/clean working tree/);
+    expect(writeFile).not.toHaveBeenCalled();
+  });
+
+  it('parses one stable target and an optional JSON flag', () => {
+    expect(parsePreflightArguments(['0.7.0', '--json'])).toEqual({ version: '0.7.0', json: true });
+    for (const args of [[], ['0.7.0', '0.8.0'], ['0.7.0', '--json', '--json'], ['0.7.0-beta']]) {
+      expect(() => parsePreflightArguments(args)).toThrow();
+    }
+  });
+});
+
+function readyGitHub(): GitHubReadinessClient {
+  return {
+    latestStableTag: () => 'v0.6.1',
+    ci: (sha) => ({
+      sha, state: 'success', message: 'All required CI jobs succeeded.',
+      run: { id: 1, attempt: 1, url: 'https://github.com/example/prompt-bank/actions/runs/1' },
+      jobs: REQUIRED_CI_JOBS.map((name) => ({ name, status: 'completed', conclusion: 'success' }))
+    })
+  };
+}
 
 function versionSources(): VersionSources {
   return {
@@ -201,6 +342,8 @@ function releaseGit(args: readonly string[]): GitResult {
   if (args[0] === 'status') return success('');
   if (args[0] === 'symbolic-ref') return success('main\n');
   if (args[0] === 'fetch') return success('');
+  if (args[0] === 'show-ref') return { status: 1, stdout: '', stderr: '' };
+  if (args[0] === 'ls-remote') return success(`${LOCAL}\trefs/heads/main\n`);
   if (args[0] === 'rev-parse') {
     if (args[2]?.includes('origin/main')) return success(`${LOCAL}\n`);
     if (args[2]?.includes('refs/tags')) return success(`${REMOTE}\n`);
