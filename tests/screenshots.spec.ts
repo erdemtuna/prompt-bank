@@ -7,6 +7,7 @@ for (const width of [1440, 390]) {
   test(`captures the favorites library at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 900 });
     await page.goto('/');
+    await page.getByRole('button', { name: 'Investigate a Topic', exact: true }).hover();
     await page.getByRole('button', { name: 'Add Investigate a Topic to favorites (Built in)' }).click();
     await expect(page.getByRole('button', { name: 'Remove Investigate a Topic from favorites (Built in)' })).toHaveAttribute('aria-busy', 'false');
     await page.getByRole('button', { name: 'Favorites', exact: true }).click();
@@ -31,6 +32,17 @@ for (const width of [1440, 390]) {
     await page.mouse.move(1400, 10);
     await page.evaluate(fontsReady);
     await expect(page).toHaveScreenshot(`favorites-error-toast-${width}.png`, { animations: 'disabled', fullPage: true });
+  });
+
+  test(`captures the unfiltered library with quiet star actions at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto('/');
+    await page.getByRole('button', { name: 'Investigate a Topic', exact: true }).hover();
+    await page.getByRole('button', { name: 'Add Investigate a Topic to favorites (Built in)' }).click();
+    await page.getByLabel('Search prompts').focus();
+    await page.mouse.move(width - 10, 10);
+    await page.evaluate(fontsReady);
+    await expect(page).toHaveScreenshot(`quiet-library-${width}.png`, { animations: 'disabled', fullPage: true });
   });
 }
 

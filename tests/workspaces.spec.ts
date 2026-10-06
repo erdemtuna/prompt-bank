@@ -106,11 +106,13 @@ test('favorite identity separates the same prompt ID across global and folder in
     };
   }, validPrompt('shared-id', 'Shared Prompt'));
   await page.goto('/');
+  await libraryButton(page, /Shared Prompt/).hover();
   await page.getByRole('button', { name: 'Add Shared Prompt to favorites (Global)' }).click();
   await expect(page.getByRole('button', { name: 'Remove Shared Prompt from favorites (Global)' })).toHaveAttribute('aria-busy', 'false');
   await page.getByRole('button', { name: 'Recent folders' }).click();
   await page.getByRole('menuitem', { name: 'Open alpha' }).click();
   await expect(page.getByRole('button', { name: 'Add Shared Prompt to favorites (Folder)' })).toHaveAttribute('aria-pressed', 'false');
+  await libraryButton(page, /Shared Prompt/).hover();
   await page.getByRole('button', { name: 'Add Shared Prompt to favorites (Folder)' }).click();
   await expect(page.getByRole('button', { name: 'Remove Shared Prompt from favorites (Folder)' })).toHaveAttribute('aria-busy', 'false');
   await page.getByRole('button', { name: 'Recent folders' }).click();
@@ -120,6 +122,27 @@ test('favorite identity separates the same prompt ID across global and folder in
   await expect(page.getByRole('button', { name: 'Remove Shared Prompt from favorites (Folder)' })).toHaveAttribute('aria-pressed', 'true');
   await page.getByRole('tab', { name: 'Library', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Remove Shared Prompt from favorites (Global)' })).toHaveAttribute('aria-pressed', 'true');
+});
+
+test('exclusive Favorites navigation preserves the desktop source filter and search', async ({ page }) => {
+  await page.goto('/');
+  await libraryButton(page, /Global Tip/).hover();
+  await page.getByRole('button', { name: 'Add Global Tip to favorites (Global)', exact: true }).click();
+  const library = page.getByRole('region', { name: 'Prompt library' });
+  const source = library.getByRole('group', { name: 'Filter by source' });
+  const navigation = library.getByRole('group', { name: 'Filter prompts' });
+  await source.getByRole('button', { name: 'Global', exact: true }).click();
+  await library.getByRole('textbox', { name: 'Search prompts' }).fill('Global Tip');
+  await navigation.getByRole('button', { name: 'writing', exact: true }).click();
+  await expect(library.locator('[data-prompt-select]')).toHaveCount(0);
+  for (const name of ['Favorites', 'review', 'All']) {
+    await navigation.getByRole('button', { name, exact: true }).click();
+    await expect(libraryButton(page, /Global Tip/)).toBeVisible();
+    await expect(library.locator('[data-prompt-select]')).toHaveCount(1);
+    await expect(navigation.locator('button[aria-pressed="true"]')).toHaveText(name);
+    await expect(source.getByRole('button', { name: 'Global', exact: true })).toHaveAttribute('aria-pressed', 'true');
+    await expect(library.getByRole('textbox', { name: 'Search prompts' })).toHaveValue('Global Tip');
+  }
 });
 
 test('the Library tab shows built in and global prompts with source labels', async ({ page }) => {
