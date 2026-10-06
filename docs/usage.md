@@ -22,11 +22,13 @@ Model labels are descriptive text, not execution settings. Required roles in the
 
 Vertical preview markers show additions relative to the initial composition; horizontal ticks show deletions. Hover or focus a marker to see which control caused the change. Markers do not enter the copied text.
 
-Use Ctrl/Cmd+K to focus search and Ctrl/Cmd+Enter to copy. Search, category, and source filters narrow the index without discarding the selected composition.
+Use Ctrl/Cmd+K to focus search and Ctrl/Cmd+Enter to copy. All, Favorites, and the categories share one navigation strip. Search and source filters narrow the chosen view without discarding the selected composition.
 
 ## Favorites
 
-The separate star beside a row adds or removes a favorite without selecting that prompt or changing your inputs. Favorites intersects with the existing filters and preserves category/title ordering. A folder favorite stays in its own workspace.
+The star beside a row adds or removes a favorite without selecting that prompt or changing your inputs. Filled stars stay visible. Outline stars appear when you hover a row or move keyboard focus into it; on touch devices, select a row to reveal its star.
+
+Choose Favorites beside All to show favorites across categories, or choose All or a category to leave Favorites. Search and source filters still apply, and category/title ordering is preserved. A folder favorite stays in its own workspace.
 
 Desktop favorites store only prompt IDs, source information, and opaque workspace IDs in `~/.prompt-bank/favorites.json`, or the home selected by `PROMPT_BANK_HOME`. The versioned file is bounded to 1 MiB and 5,000 references. Updates are coordinated and atomic.
 

@@ -126,7 +126,9 @@ export function WorkspaceView({
 
   const effectiveSourceFilter =
     sourceFilter === 'all' || availableSources.some((source) => source === sourceFilter) ? sourceFilter : 'all';
-  const effectiveCategory = category === 'all' || categories.some((item) => item === category) ? category : 'all';
+  const effectiveCategory = !favoritesOnly && (category === 'all' || categories.some((item) => item === category))
+    ? category
+    : 'all';
   const referenceFor = (prompt: Prompt) => promptReference(prompt, workspaceId);
 
   const filteredPrompts = useMemo(() => {
@@ -156,6 +158,16 @@ export function WorkspaceView({
     onCategoryChange('all');
     onSourceChange('all');
     onFavoritesChange(false);
+  }
+
+  function selectCategory(value: string) {
+    onFavoritesChange(false);
+    onCategoryChange(value);
+  }
+
+  function selectFavorites(value: boolean) {
+    if (value) onCategoryChange('all');
+    onFavoritesChange(value);
   }
 
   function showSelectedPrompt() {
@@ -190,7 +202,7 @@ export function WorkspaceView({
             pending: change?.status === 'queued' || change?.status === 'saving'
           };
         }}
-        onFavoritesChange={onFavoritesChange}
+        onFavoritesChange={selectFavorites}
         onToggleFavorite={(prompt, origin) => {
           const reference = referenceFor(prompt);
           favorites.set({
@@ -205,7 +217,7 @@ export function WorkspaceView({
         }}
         onRetryFavorite={(prompt) => { void favorites.retry(favoriteKey(referenceFor(prompt))); }}
         onSearchChange={onSearchChange}
-        onCategoryChange={onCategoryChange}
+        onCategoryChange={selectCategory}
         onSourceChange={onSourceChange}
         onSelectPrompt={onSelectPrompt}
         onClearFilters={clearFilters}

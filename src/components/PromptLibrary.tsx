@@ -2,7 +2,7 @@ import { Button, Input, Text, Tooltip, makeStyles, mergeClasses } from '@fluentu
 import { StarFilled, StarRegular } from '@fluentui/react-icons';
 import { useRef } from 'react';
 import type { Prompt } from '../data/schemas';
-import { formatCount, shortcutModifier } from './promptUi';
+import { shortcutModifier } from './promptUi';
 
 const useStyles = makeStyles({
   panel: {
@@ -76,39 +76,25 @@ const useStyles = makeStyles({
     ':focus-visible': {
       outline: '2px solid var(--sw-accent)',
       outlineOffset: '3px'
+    },
+    ':disabled': {
+      cursor: 'not-allowed'
     }
   },
   filterActive: {
     color: 'var(--sw-ink)',
     borderBottom: '2px solid var(--sw-accent)'
   },
-  favoriteFilter: {
-    justifySelf: 'start',
-    borderRadius: 0,
-    borderBottom: '2px solid transparent',
-    padding: '2px 0',
-    backgroundColor: 'transparent',
-    fontFamily: 'var(--sw-mono)',
-    fontSize: '11px',
-    letterSpacing: '0.1em',
-    textTransform: 'uppercase',
-    color: 'var(--sw-muted)',
-    ':hover': { color: 'var(--sw-ink)', backgroundColor: 'var(--sw-fill)' },
-    ':active': { color: 'var(--sw-ink)' }
-  },
-  favoriteFilterActive: {
-    color: 'var(--sw-ink)',
-    borderBottomColor: 'var(--sw-accent)'
-  },
   summary: {
-    marginTop: '12px',
-    marginBottom: '4px',
-    flexShrink: 0,
-    fontFamily: 'var(--sw-mono)',
-    fontSize: '11px',
-    letterSpacing: '0.1em',
-    textTransform: 'uppercase',
-    color: 'var(--sw-muted)'
+    position: 'absolute',
+    width: '1px',
+    height: '1px',
+    padding: 0,
+    margin: '-1px',
+    overflow: 'hidden',
+    clip: 'rect(0 0 0 0)',
+    whiteSpace: 'nowrap',
+    border: 0
   },
   list: {
     display: 'flex',
@@ -116,6 +102,7 @@ const useStyles = makeStyles({
     flex: 1,
     overflow: 'auto',
     minHeight: 0,
+    marginTop: '16px',
     borderTop: '1px solid var(--sw-rule)'
   },
   row: {
@@ -144,11 +131,27 @@ const useStyles = makeStyles({
     ':focus-visible': {
       outline: '2px solid var(--sw-accent)',
       outlineOffset: '-2px'
+    },
+    '&:focus-within [data-favorite-action]': {
+      opacity: 1,
+      pointerEvents: 'auto'
+    },
+    '@media (hover: hover)': {
+      '&:hover [data-favorite-action]': {
+        opacity: 1,
+        pointerEvents: 'auto'
+      }
     }
   },
   rowSelected: {
     backgroundColor: 'var(--sw-fill)',
-    borderLeft: '3px solid var(--sw-accent)'
+    borderLeft: '3px solid var(--sw-accent)',
+    '@media (hover: none)': {
+      '& [data-favorite-action]': {
+        opacity: 1,
+        pointerEvents: 'auto'
+      }
+    }
   },
   selectButton: {
     appearance: 'none',
@@ -170,9 +173,15 @@ const useStyles = makeStyles({
     height: '32px',
     padding: 0,
     marginTop: '8px',
+    opacity: 0,
+    pointerEvents: 'none',
     color: 'var(--sw-accent-strong)',
     ':hover': { color: 'var(--sw-accent-strong)', backgroundColor: 'var(--sw-fill)' },
     ':active': { color: 'var(--sw-accent-strong)' }
+  },
+  starFavorite: {
+    opacity: 1,
+    pointerEvents: 'auto'
   },
   failed: {
     gridColumn: '1 / -1',
@@ -291,9 +300,7 @@ export function PromptLibrary({
   const filtersAreActive = Boolean(search.trim()) || category !== 'all' || sourceFilter !== 'all' || favoritesOnly;
   const resultSummary = filtersAreActive
     ? `${String(prompts.length).padStart(2, '0')} / ${String(totalPromptCount).padStart(2, '0')} match`
-    : `Index — ${String(totalPromptCount).padStart(2, '0')} prompts`;
-
-  const filterOptions = ['all', ...categories];
+    : `${String(totalPromptCount).padStart(2, '0')} prompts`;
 
   return (
     <section className={styles.panel} aria-label="Prompt library">
@@ -307,38 +314,45 @@ export function PromptLibrary({
           value={search}
           onChange={(_, data) => onSearchChange(data.value)}
         />
-        <Button
-          ref={favoriteFilterRef}
-          appearance="subtle"
-          className={mergeClasses(styles.favoriteFilter, favoritesOnly && styles.favoriteFilterActive)}
-          icon={favoritesOnly ? <StarFilled /> : <StarRegular />}
-          aria-pressed={favoritesOnly}
-          disabled={favoritesLoading}
-          onClick={() => onFavoritesChange(!favoritesOnly)}
-        >
-          Favorites
-        </Button>
-      {showSourceFilter ? (
-        <div className={styles.filters} role="group" aria-label="Filter by source">
-          {sourceOptions.map((option) => {
-            const isActive = sourceFilter === option.value;
-            return (
-              <button
-                key={option.value}
-                type="button"
-                className={isActive ? `${styles.filter} ${styles.filterActive}` : styles.filter}
-                aria-pressed={isActive}
-                onClick={() => onSourceChange(option.value)}
-              >
-                {option.label}
-              </button>
-            );
-          })}
-        </div>
-      ) : null}
-      <div className={styles.filters} role="group" aria-label="Filter by category">
-          {filterOptions.map((item) => {
-            const isActive = category === item;
+        {showSourceFilter ? (
+          <div className={styles.filters} role="group" aria-label="Filter by source">
+            {sourceOptions.map((option) => {
+              const isActive = sourceFilter === option.value;
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  className={isActive ? `${styles.filter} ${styles.filterActive}` : styles.filter}
+                  aria-pressed={isActive}
+                  onClick={() => onSourceChange(option.value)}
+                >
+                  {option.label}
+                </button>
+              );
+            })}
+          </div>
+        ) : null}
+        <div className={styles.filters} role="group" aria-label="Filter prompts">
+          <button
+            type="button"
+            className={mergeClasses(styles.filter, !favoritesOnly && category === 'all' && styles.filterActive)}
+            aria-pressed={!favoritesOnly && category === 'all'}
+            onClick={() => onCategoryChange('all')}
+          >
+            All
+          </button>
+          <button
+            ref={favoriteFilterRef}
+            type="button"
+            className={mergeClasses(styles.filter, favoritesOnly && styles.filterActive)}
+            aria-pressed={favoritesOnly}
+            disabled={favoritesLoading}
+            onClick={() => onFavoritesChange(true)}
+          >
+            Favorites
+          </button>
+          {categories.map((item) => {
+            const isActive = !favoritesOnly && category === item;
             return (
               <button
                 key={item}
@@ -347,7 +361,7 @@ export function PromptLibrary({
                 aria-pressed={isActive}
                 onClick={() => onCategoryChange(item)}
               >
-                {item === 'all' ? 'All' : item}
+                {item}
               </button>
             );
           })}
@@ -375,7 +389,6 @@ export function PromptLibrary({
           const favorite = favoriteState(prompt);
           const starLabel = `${favorite.favorite ? 'Remove' : 'Add'} ${prompt.title} ${favorite.favorite ? 'from' : 'to'} favorites (${prompt.sourceLabel})`;
           if (prompt.kind === 'command') metaParts.push('command');
-          if (prompt.variables.length > 0) metaParts.push(formatCount(prompt.variables.length, 'input'));
 
           return (
             <div
@@ -403,7 +416,8 @@ export function PromptLibrary({
               </button>
               <Tooltip content={favorite.unsaved ? `${starLabel}. Not saved.` : starLabel} relationship="description">
                 <Button
-                  className={styles.star}
+                  className={mergeClasses(styles.star, favorite.favorite && styles.starFavorite)}
+                  data-favorite-action
                   appearance="subtle"
                   icon={favorite.favorite ? <StarFilled /> : <StarRegular />}
                   aria-label={starLabel}

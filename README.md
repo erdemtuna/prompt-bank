@@ -22,7 +22,7 @@ Installers are currently unsigned. Windows and macOS may show warnings; the repo
 2. Fill in the context, choose the relevant options, and check the live preview.
 3. Copy the composed text and paste it into your AI tool.
 
-Twelve prompts cover reviews, planning, investigations, debugging, refactoring, and writing. Star the ones you use often and find them with the Favorites filter. Model choices shape the copied text; they do not configure or call a provider.
+Twelve prompts cover reviews, planning, investigations, debugging, refactoring, and writing. Star the ones you use often and find them under Favorites beside All. Model choices shape the copied text; they do not configure or call a provider.
 
 **Ctrl/Cmd+K** jumps to search. **Ctrl/Cmd+Enter** copies the prompt.
 

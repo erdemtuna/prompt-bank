@@ -126,7 +126,7 @@ describe('PromptLibrary source filter', () => {
       const filter = screen.getByRole('button', { name: 'Favorites' });
       expect(filter.getAttribute('aria-pressed')).toBe('true');
       fireEvent.click(filter);
-      expect(filters).toHaveBeenCalledWith(false);
+      expect(filters).toHaveBeenCalledWith(true);
       expect(screen.getAllByText('Not saved')).toHaveLength(2);
       fireEvent.click(screen.getAllByRole('button', { name: 'Retry' })[0]);
       expect(retry).toHaveBeenCalledOnce();
@@ -159,5 +159,52 @@ describe('PromptLibrary source filter', () => {
     });
 
     expect(screen.getByRole('status').textContent).toMatch(/01 \/ 02 match/);
+  });
+
+  it('places Favorites directly after All in the ordinary navigation group', () => {
+    const categories = vi.fn();
+    renderLibrary({ categories: ['review', 'writing'], onCategoryChange: categories });
+    const navigation = within(screen.getByRole('group', { name: 'Filter prompts' }));
+    const buttons = navigation.getAllByRole('button');
+    expect(buttons.map((button) => button.textContent)).toEqual(['All', 'Favorites', 'review', 'writing']);
+    expect(buttons.filter((button) => button.getAttribute('aria-pressed') === 'true')).toEqual([buttons[0]]);
+    expect(navigation.getByRole('button', { name: 'Favorites' }).querySelector('svg')).toBeNull();
+    fireEvent.click(navigation.getByRole('button', { name: 'writing' }));
+    expect(categories).toHaveBeenCalledWith('writing');
+  });
+
+  it('does not mark All or a category active while Favorites is active', () => {
+    renderLibrary({ favoritesOnly: true, category: 'review' });
+    const navigation = within(screen.getByRole('group', { name: 'Filter prompts' }));
+    expect(navigation.getAllByRole('button')
+      .filter((button) => button.getAttribute('aria-pressed') === 'true')
+      .map((button) => button.textContent)).toEqual(['Favorites']);
+  });
+
+  it('keeps the result announcement visually hidden without an Index heading', () => {
+    renderLibrary({ selectedPromptHidden: true });
+    const status = screen.getByRole('status');
+    expect(status.textContent).toBe('02 prompts · selection hidden');
+    expect(status.getAttribute('aria-live')).toBe('polite');
+    expect(status.getAttribute('aria-atomic')).toBe('true');
+    expect(getComputedStyle(status).position).toBe('absolute');
+    expect(getComputedStyle(status).width).toBe('1px');
+    expect(getComputedStyle(status).height).toBe('1px');
+    expect(getComputedStyle(status).overflow).toBe('hidden');
+    expect(screen.queryByText(/Index/)).toBeNull();
+  });
+
+  it('keeps source, category, and command metadata but omits row input counts', () => {
+    renderLibrary({
+      prompts: [makePrompt({
+        title: 'Command with inputs',
+        category: 'cli',
+        kind: 'command',
+        variables: [{ name: 'topic', label: 'Topic', required: true }]
+      })]
+    });
+    const row = screen.getByRole('button', { name: 'Command with inputs, Built in, selected' });
+    expect(within(row).getByText('Built in — cli — command')).toBeTruthy();
+    expect(within(row).queryByText(/\d+ inputs?/)).toBeNull();
   });
 });

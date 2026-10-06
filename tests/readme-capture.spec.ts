@@ -3,9 +3,11 @@ import { test, expect, type Page } from '@playwright/test';
 async function prepareReadmeDemo(page: Page): Promise<void> {
   await page.setViewportSize({ width: 1440, height: 1100 });
   await page.goto('/');
+  await page.getByRole('button', { name: 'Investigate a Topic', exact: true }).hover();
   await page.getByRole('button', {
     name: 'Add Investigate a Topic to favorites (Built in)', exact: true
   }).click();
+  await page.getByRole('button', { name: 'Find the Root Cause', exact: true }).hover();
   await page.getByRole('button', {
     name: 'Add Find the Root Cause to favorites (Built in)', exact: true
   }).click();
